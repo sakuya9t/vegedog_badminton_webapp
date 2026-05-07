@@ -1,7 +1,27 @@
-export default function PostMatchPage() {
+import { createClient } from '@/lib/supabase/server'
+import PostMatchClient from './PostMatchClient'
+import type { RestaurantWithDetails } from '@/lib/types'
+
+export const revalidate = 0
+
+export default async function PostMatchPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { data: restaurants } = await supabase
+    .from('restaurants')
+    .select(`
+      *,
+      adder:profiles!added_by(id, nickname, avatar_url),
+      dishes:restaurant_dishes(id, name, added_by),
+      recommendations:restaurant_recommendations(id, user_id, recommended)
+    `)
+    .order('created_at', { ascending: false })
+
   return (
-    <main className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-      <h1 className="text-xl font-bold text-gray-900">赛后总结</h1>
-    </main>
+    <PostMatchClient
+      initialRestaurants={(restaurants ?? []) as unknown as RestaurantWithDetails[]}
+      currentUserId={user?.id ?? ''}
+    />
   )
 }

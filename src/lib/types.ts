@@ -108,3 +108,43 @@ export type SessionInsert = Omit<Session, 'id' | 'created_at'>
 export type ParticipantInsert = Omit<Participant, 'id' | 'joined_at' | 'withdrew_at'>
 export type PaymentMethodInsert = Omit<PaymentMethod, 'id' | 'created_at'>
 export type PaymentRecordInsert = Omit<PaymentRecord, 'id' | 'updated_at'>
+
+// ── Restaurant types ────────────────────────────────────────────────────────
+
+export interface Restaurant {
+  id:                  string
+  name:                string
+  cuisine:             string | null
+  distance:            string | null
+  address:             string | null
+  hours:               string | null
+  yelp_url:            string | null
+  google_maps_url:     string | null
+  has_wait:            boolean
+  accepts_reservation: boolean
+  group_size:          string | null
+  added_by:            string | null
+  created_at:          string
+}
+
+export interface RestaurantDish {
+  id:            string
+  restaurant_id: string
+  name:          string
+  added_by:      string | null
+  created_at:    string
+}
+
+export interface RestaurantRecommendation {
+  id:            string
+  restaurant_id: string
+  user_id:       string
+  recommended:   boolean
+  created_at:    string
+}
+
+export interface RestaurantWithDetails extends Restaurant {
+  adder:           Pick<Profile, 'id' | 'nickname' | 'avatar_url'> | null
+  dishes:          RestaurantDish[]
+  recommendations: RestaurantRecommendation[]
+}

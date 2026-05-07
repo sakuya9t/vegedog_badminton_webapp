@@ -410,3 +410,63 @@ grant execute on function public.withdraw_participant to authenticated;
 
 create index if not exists idx_sessions_starts_at   on public.sessions(starts_at);
 create index if not exists idx_participants_session  on public.participants(session_id, queue_position);
+
+-- ============================================================
+-- 7. RESTAURANTS (赛后总结)
+-- ============================================================
+
+create table public.restaurants (
+  id                   uuid primary key default gen_random_uuid(),
+  name                 text not null,
+  cuisine              text,
+  distance             text,
+  address              text,
+  hours                text,
+  yelp_url             text,
+  google_maps_url      text,
+  has_wait             boolean not null default false,
+  accepts_reservation  boolean not null default false,
+  group_size           text,
+  added_by             uuid references public.profiles(id),
+  created_at           timestamptz not null default now()
+);
+
+create table public.restaurant_dishes (
+  id            uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  name          text not null,
+  added_by      uuid references public.profiles(id),
+  created_at    timestamptz not null default now()
+);
+
+create table public.restaurant_recommendations (
+  id            uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  user_id       uuid not null references public.profiles(id),
+  recommended   boolean not null,
+  created_at    timestamptz not null default now(),
+  unique(restaurant_id, user_id)
+);
+
+alter table public.restaurants               enable row level security;
+alter table public.restaurant_dishes         enable row level security;
+alter table public.restaurant_recommendations enable row level security;
+
+-- restaurants
+create policy "restaurants_select_auth"  on public.restaurants for select using (auth.uid() is not null);
+create policy "restaurants_insert_auth"  on public.restaurants for insert with check (auth.uid() = added_by);
+create policy "restaurants_update_own"   on public.restaurants for update using (auth.uid() = added_by);
+create policy "restaurants_delete_own"   on public.restaurants for delete using (auth.uid() = added_by);
+
+-- restaurant_dishes
+create policy "dishes_select_auth"   on public.restaurant_dishes for select using (auth.uid() is not null);
+create policy "dishes_insert_auth"   on public.restaurant_dishes for insert with check (auth.uid() = added_by);
+create policy "dishes_delete_own"    on public.restaurant_dishes for delete using (auth.uid() = added_by);
+
+-- restaurant_recommendations
+create policy "recs_select_auth"  on public.restaurant_recommendations for select using (auth.uid() is not null);
+create policy "recs_all_own"      on public.restaurant_recommendations for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create index if not exists idx_restaurant_dishes_restaurant on public.restaurant_dishes(restaurant_id);
+create index if not exists idx_recs_restaurant on public.restaurant_recommendations(restaurant_id);

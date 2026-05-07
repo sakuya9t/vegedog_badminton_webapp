@@ -53,7 +53,9 @@ const tabs = [
       <svg className={`w-6 h-6 ${active ? 'text-brand-600' : 'text-gray-400'}`}
         viewBox="0 0 24 24" fill="none" stroke="currentColor"
         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 11l19-9-9 19-2-8-8-2z"/>
+        <path d="M3 2v7c0 1.1.9 2 2 2h2V2"/>
+        <path d="M7 2v20"/>
+        <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/>
       </svg>
     ),
   },
