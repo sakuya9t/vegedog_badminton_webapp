@@ -840,10 +840,17 @@ export default function SessionDetailClient({
 
       {/* Participant list */}
       <div className="card space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">
-            已报名（{joined.length}/{maxParticipants}）
-          </h2>
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-900">
+              已报名（{joined.length}/{maxParticipants}）
+            </h2>
+            {session.status === 'locked' && payRecords.some(r => joined.some(p => p.id === r.participant_id)) && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                已付款（{payRecords.filter(r => r.status === 'paid' && joined.some(p => p.id === r.participant_id)).length}/{joined.length}）
+              </p>
+            )}
+          </div>
           {/* Participant search — locked sessions, all logged-in users */}
           {currentUser && session.status === 'locked' && (
             <button
@@ -1028,25 +1035,40 @@ export default function SessionDetailClient({
               <div className="bg-white rounded-xl border border-gray-100 shadow-2xl mb-1
                               overflow-hidden max-h-56 overflow-y-auto">
                 {searchMatches.map((p, i) => (
-                  <button key={p.id}
-                    onMouseDown={() => { setMatchIdx(i); setDropdownVisible(false) }}
-                    className={`w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors
+                  <div key={p.id}
+                    className={`flex items-center text-sm transition-colors
                                 ${i === safeMatchIdx ? 'bg-brand-50' : 'hover:bg-gray-50'}`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.profile?.avatar_url ?? `https://api.dicebear.com/9.x/thumbs/svg?seed=${p.user_id}`}
-                      alt="" className="w-7 h-7 rounded-full bg-gray-100 shrink-0 object-cover"/>
-                    <span className="font-medium">{p.display_name}</span>
-                    {p.profile?.nickname && p.profile.nickname !== p.display_name && (
-                      <span className="text-xs text-gray-400">{p.profile.nickname}</span>
+                    {/* Name area — tap to highlight row in queue */}
+                    <button
+                      onMouseDown={() => { setMatchIdx(i); setDropdownVisible(false) }}
+                      className="flex-1 text-left px-4 py-3 flex items-center gap-3 min-w-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.profile?.avatar_url ?? `https://api.dicebear.com/9.x/thumbs/svg?seed=${p.user_id}`}
+                        alt="" className="w-7 h-7 rounded-full bg-gray-100 shrink-0 object-cover"/>
+                      <span className="font-medium truncate">{p.display_name}</span>
+                      {p.profile?.nickname && p.profile.nickname !== p.display_name && (
+                        <span className="text-xs text-gray-400 truncate">{p.profile.nickname}</span>
+                      )}
+                      {i === safeMatchIdx && (
+                        <span className="ml-auto text-brand-600 shrink-0">
+                          <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                          </svg>
+                        </span>
+                      )}
+                    </button>
+                    {/* +时 toggle — admin only */}
+                    {isAdmin && p.status === 'joined' && (
+                      <button
+                        onMouseDown={e => { e.preventDefault(); handleToggleLate(p) }}
+                        className={`shrink-0 mr-3 text-xs px-2 py-1 rounded-lg font-medium
+                          ${p.stayed_late
+                            ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                        +时
+                      </button>
                     )}
-                    {i === safeMatchIdx && (
-                      <span className="ml-auto text-brand-600">
-                        <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                        </svg>
-                      </span>
-                    )}
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -1195,6 +1217,15 @@ function ParticipantRow({
                 : 'bg-pink-100 text-pink-600 hover:bg-pink-200'}`}>
             {payRecord?.status === 'paid' ? '已付 ✓' : '❗标记已支付'}
           </button>
+        )}
+
+        {/* Admin read-only payment badge for others */}
+        {isAdmin && !isOwn && allowActions && payRecord && (
+          <span className={`text-xs px-2 py-1 rounded-lg font-medium ${
+            payRecord.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+          }`}>
+            {payRecord.status === 'paid' ? '已付 ✓' : '未支付'}
+          </span>
         )}
 
         {/* Read-only payment badge — when actions not available but record exists */}
@@ -1555,24 +1586,6 @@ function PaymentSection({
         </div>
       )}
 
-      {/* Payment records */}
-      {paymentRecords.length > 0 && (
-        <div className="space-y-2 pt-2 border-t border-gray-100">
-          <p className="text-xs text-gray-400 uppercase font-semibold tracking-wide">付款记录</p>
-          {participants.map(p => {
-            const record = paymentRecords.find(r => r.participant_id === p.id)
-            if (!record) return null
-            return (
-              <div key={p.id} className="flex items-center justify-between text-sm">
-                <span className="text-gray-700">{p.display_name}</span>
-                <span className={`badge ${PAY_CLASS[record.status]}`}>
-                  {PAY_LABEL[record.status]}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
