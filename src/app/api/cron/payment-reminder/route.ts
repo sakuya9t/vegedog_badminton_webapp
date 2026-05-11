@@ -2,7 +2,6 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatSessionDate } from '@/lib/dates'
 
@@ -13,11 +12,10 @@ export async function GET() {
   const gmailPass = process.env.GMAIL_APP_PASSWORD
   if (!gmailUser || !gmailPass) return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
 
-  const supabase = await createClient()
   const admin = createAdminClient()
 
   // Find locked sessions whose starts_at was >= 24h ago (UTC — 24h is 24h regardless of timezone)
-  const { data: sessions } = await supabase
+  const { data: sessions } = await admin
     .from('sessions')
     .select('id, title, starts_at, location')
     .eq('status', 'locked')
@@ -34,7 +32,7 @@ export async function GET() {
 
   for (const session of sessions) {
     // Find unpaid participants who haven't been reminded yet
-    const { data: records } = await supabase
+    const { data: records } = await admin
       .from('payment_records')
       .select('id, participant_id')
       .eq('session_id', session.id)
@@ -44,7 +42,7 @@ export async function GET() {
     if (!records?.length) continue
 
     // Get user_ids for these participants
-    const { data: participants } = await supabase
+    const { data: participants } = await admin
       .from('participants')
       .select('id, user_id, display_name')
       .in('id', records.map(r => r.participant_id))
@@ -70,7 +68,7 @@ export async function GET() {
       // Mark reminder as sent
       const record = records.find(r => r.participant_id === participant.id)
       if (record) {
-        await supabase
+        await admin
           .from('payment_records')
           .update({ reminder_sent: true })
           .eq('id', record.id)
