@@ -19,3 +19,7 @@ npm-debug.log*
 playwright/.auth/
 test-results/
 tests/load/fixtures.json
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/

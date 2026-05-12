@@ -64,8 +64,19 @@ create table public.payment_records (
   status         text not null default 'unpaid'
                    check (status in ('unpaid', 'paid', 'waived')),
   note           text,
+  reminder_sent  boolean not null default false,
   updated_at     timestamptz not null default now(),
   unique (participant_id)
+);
+
+create table public.participant_renames (
+  id             uuid primary key default gen_random_uuid(),
+  session_id     uuid not null references public.sessions(id) on delete cascade,
+  participant_id uuid not null references public.participants(id) on delete cascade,
+  user_id        uuid not null references public.profiles(id),
+  old_name       text not null,
+  new_name       text not null,
+  created_at     timestamptz not null default now()
 );
 
 create table public.follows (
@@ -289,23 +300,63 @@ create trigger on_session_created
   after insert on public.sessions
   for each row execute function public.add_initiator_as_admin();
 
+-- Rename own participant entry (records the rename in participant_renames for the timeline)
+create or replace function public.rename_participant(
+  p_participant_id uuid,
+  p_new_name       text
+)
+returns public.participants
+language plpgsql security definer
+as $$
+declare
+  v_participant public.participants;
+  v_old_name    text;
+  v_new_name    text;
+begin
+  v_new_name := btrim(p_new_name);
+  if v_new_name = '' then raise exception 'New name cannot be empty'; end if;
+
+  select * into v_participant from public.participants where id = p_participant_id;
+  if not found then raise exception 'Participant not found'; end if;
+  if v_participant.user_id != auth.uid() then raise exception 'Not your entry'; end if;
+
+  v_old_name := v_participant.display_name;
+  if v_old_name = v_new_name then return v_participant; end if;
+
+  update public.participants
+     set display_name = v_new_name
+   where id = p_participant_id
+   returning * into v_participant;
+
+  insert into public.participant_renames (session_id, participant_id, user_id, old_name, new_name)
+  values (v_participant.session_id, v_participant.id, v_participant.user_id, v_old_name, v_new_name);
+
+  return v_participant;
+end;
+$$;
+
+grant execute on function public.rename_participant to authenticated;
+
 -- ============================================================
 -- 3. REALTIME
 -- ============================================================
 
 alter publication supabase_realtime add table public.participants;
+alter publication supabase_realtime add table public.payment_records;
+alter publication supabase_realtime add table public.participant_renames;
 
 -- ============================================================
 -- 4. ROW LEVEL SECURITY
 -- ============================================================
 
-alter table public.profiles        enable row level security;
-alter table public.sessions        enable row level security;
-alter table public.participants    enable row level security;
-alter table public.payment_methods enable row level security;
-alter table public.payment_records enable row level security;
-alter table public.follows         enable row level security;
-alter table public.session_admins  enable row level security;
+alter table public.profiles            enable row level security;
+alter table public.sessions            enable row level security;
+alter table public.participants        enable row level security;
+alter table public.payment_methods     enable row level security;
+alter table public.payment_records     enable row level security;
+alter table public.follows             enable row level security;
+alter table public.session_admins      enable row level security;
+alter table public.participant_renames enable row level security;
 
 -- profiles
 create policy "profiles_select_all" on public.profiles for select using (true);
@@ -394,19 +445,46 @@ create policy "admins_delete_admin" on public.session_admins
     and user_id != (select initiator_id from public.sessions where id = session_id)
   );
 
+-- participant_renames (read-only for everyone; writes happen via rename_participant RPC)
+create policy "renames_select_all" on public.participant_renames for select using (true);
+
 -- ============================================================
--- 5. GRANTS
+-- 5. STORAGE: avatars bucket (user-uploaded profile pictures)
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+  values ('avatars', 'avatars', true)
+  on conflict (id) do nothing;
+
+-- Anyone can read avatars (they're public profile pictures).
+create policy "avatars_public_read" on storage.objects for select
+  using (bucket_id = 'avatars');
+
+-- Users can upload to a folder named after their own auth uid (path: <uid>/avatar.jpg).
+create policy "avatars_insert_own" on storage.objects for insert
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "avatars_update_own" on storage.objects for update
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "avatars_delete_own" on storage.objects for delete
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ============================================================
+-- 6. GRANTS
 -- ============================================================
 
 grant usage on schema public to anon, authenticated;
 grant all on all tables in schema public to anon, authenticated;
 grant all on all functions in schema public to anon, authenticated;
-grant execute on function public.join_session to authenticated;
+grant execute on function public.join_session         to authenticated;
 grant execute on function public.withdraw_participant to authenticated;
+grant execute on function public.rename_participant   to authenticated;
 
 -- ============================================================
--- 6. INDEXES
+-- 7. INDEXES
 -- ============================================================
 
-create index if not exists idx_sessions_starts_at   on public.sessions(starts_at);
-create index if not exists idx_participants_session  on public.participants(session_id, queue_position);
+create index if not exists idx_sessions_starts_at     on public.sessions(starts_at);
+create index if not exists idx_participants_session   on public.participants(session_id, queue_position);
+create index if not exists idx_renames_session        on public.participant_renames(session_id, created_at desc);
