@@ -35,6 +35,9 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
   const [submitting, setSubmitting] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [parseMsg, setParseMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [parseExtra, setParseExtra] = useState<{
+    rating?: number; userRatingCount?: number; priceLevel?: string; phone?: string; website?: string
+  } | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   const cuisineOptions = useMemo(() => {
@@ -59,6 +62,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
     setDishes([])
     setNewDish('')
     setParseMsg(null)
+    setParseExtra(null)
     setShowModal(true)
   }
 
@@ -79,14 +83,25 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
       if (data.name    && !form.name.trim())    { updates.name    = data.name;    filled.push('店名') }
       if (data.address && !form.address.trim()) { updates.address = data.address; filled.push('地址') }
       if (data.hours   && !form.hours.trim())   { updates.hours   = data.hours;   filled.push('营业时间') }
+      if (data.cuisine && !form.cuisine.trim()) { updates.cuisine = data.cuisine; filled.push('菜系') }
 
       if (filled.length > 0) {
         setForm(f => ({ ...f, ...updates }))
         setParseMsg({ text: `已自动填入：${filled.join('、')}`, ok: true })
-      } else if (!data.name && !data.address && !data.hours) {
+      } else if (!data.name && !data.address && !data.hours && !data.cuisine) {
         setParseMsg({ text: '未能识别内容，请手动填写', ok: false })
       } else {
         setParseMsg({ text: '字段已有内容，未覆盖', ok: true })
+      }
+
+      if (data.rating || data.phone || data.website) {
+        setParseExtra({
+          rating: data.rating,
+          userRatingCount: data.userRatingCount,
+          priceLevel: data.priceLevel,
+          phone: data.phone,
+          website: data.website,
+        })
       }
     } catch {
       setParseMsg({ text: '解析失败，请手动填写', ok: false })
@@ -383,7 +398,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
                     type="url"
                     placeholder="粘贴 Google Maps 链接..."
                     value={form.google_maps_url}
-                    onChange={e => { setParseMsg(null); setForm(f => ({ ...f, google_maps_url: e.target.value })) }}
+                    onChange={e => { setParseMsg(null); setParseExtra(null); setForm(f => ({ ...f, google_maps_url: e.target.value })) }}
                     className="input flex-1 text-sm"
                   />
                   <button
@@ -399,6 +414,20 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
                   <p className={`text-xs mt-1.5 ${parseMsg.ok ? 'text-brand-600' : 'text-red-500'}`}>
                     {parseMsg.text}
                   </p>
+                )}
+                {parseExtra && (
+                  <div className="mt-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
+                    {parseExtra.rating !== undefined && (
+                      <span>⭐ {parseExtra.rating.toFixed(1)} ({parseExtra.userRatingCount?.toLocaleString()} 评价)</span>
+                    )}
+                    {parseExtra.priceLevel && (
+                      <span>{'$'.repeat({ PRICE_LEVEL_INEXPENSIVE: 1, PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4 }[parseExtra.priceLevel] ?? 2)}</span>
+                    )}
+                    {parseExtra.phone && <span>📞 {parseExtra.phone}</span>}
+                    {parseExtra.website && (
+                      <a href={parseExtra.website} target="_blank" rel="noopener noreferrer" className="text-brand-600 underline underline-offset-1">官网</a>
+                    )}
+                  </div>
                 )}
               </div>
 

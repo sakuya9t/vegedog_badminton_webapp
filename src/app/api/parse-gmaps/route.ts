@@ -1,37 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-function decodeHtml(s: string) {
-  return s
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
+const API_KEY = process.env.GOOGLE_PLACES_API_KEY
+
+// Maps Google place primary types to Chinese cuisine labels
+const TYPE_TO_CUISINE: Record<string, string> = {
+  chinese_restaurant:        '中餐',
+  taiwanese_restaurant:      '中餐',
+  dim_sum_restaurant:        '中餐',
+  hot_pot_restaurant:        '火锅',
+  japanese_restaurant:       '日料',
+  sushi_restaurant:          '日料',
+  ramen_restaurant:          '日料',
+  korean_restaurant:         '韩餐',
+  american_restaurant:       '美式',
+  burger_restaurant:         '汉堡',
+  mexican_restaurant:        '墨西哥',
+  vietnamese_restaurant:     '越南菜',
+  thai_restaurant:           '泰餐',
+  pizza_restaurant:          '披萨',
+  italian_restaurant:        '意式',
+  indian_restaurant:         '印度菜',
+  seafood_restaurant:        '海鲜',
+  french_restaurant:         '法餐',
+  mediterranean_restaurant:  '地中海菜',
+  barbecue_restaurant:       '烤肉',
+  cafe:                      '咖啡厅',
+  bakery:                    '烘焙',
+  ice_cream_shop:            '冰淇淋',
 }
 
-// Extract <meta name/property="key" content="..."> value, attribute order doesn't matter
-function getMeta(html: string, key: string): string {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const patterns = [
-    new RegExp(`<meta[^>]+(?:name|property)=["']${escaped}["'][^>]+content=["']([^"'<>]+)["']`, 'i'),
-    new RegExp(`<meta[^>]+content=["']([^"'<>]+)["'][^>]+(?:name|property)=["']${escaped}["']`, 'i'),
-  ]
-  for (const re of patterns) {
-    const m = html.match(re)
-    if (m?.[1]) return decodeHtml(m[1])
+// Extract the raw Place ID from a Google Maps URL (after !1s in data= param)
+function extractPlaceId(url: string): string | null {
+  try {
+    const decoded = decodeURIComponent(url)
+    return decoded.match(/!1s([^!&\s]+)/)?.[1] ?? null
+  } catch {
+    return null
   }
-  return ''
 }
 
-// Find an address-like segment within a delimited string
-// Accepts: starts with a street number OR contains state+zip OR ends with state abbreviation
-function extractAddress(text: string): string | undefined {
-  const parts = text.split(/[·•|]/).map(s => s.trim()).filter(s => s.length > 4)
-  for (const part of parts) {
-    if (/^\d+\s+\S/.test(part)) return part                    // "123 Main St..."
-    if (/\b[A-Z]{2}\s+\d{5}\b/.test(part)) return part        // "...CA 91234"
-    if (/,\s*[A-Z]{2}(?:\s+\d{5})?$/.test(part)) return part  // "..., CA" or "..., CA 91234"
-  }
+// Compact hours: "Daily 11:00 AM – 10:00 PM" if all days same, otherwise full list
+function formatHours(weekdayDescriptions: string[]): string {
+  if (!weekdayDescriptions.length) return ''
+  const timeParts = weekdayDescriptions.map(d => d.split(': ').slice(1).join(': '))
+  if (timeParts.every(t => t === timeParts[0])) return `Daily ${timeParts[0]}`
+  return weekdayDescriptions.join('\n')
 }
 
 export async function GET(req: NextRequest) {
@@ -39,100 +52,99 @@ export async function GET(req: NextRequest) {
   if (!url || !/^https?:\/\/(maps\.app\.goo\.gl|www\.google\.com\/maps)/.test(url)) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
-
-  try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-        'Accept': 'text/html',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-      signal: AbortSignal.timeout(8000),
-      redirect: 'follow',
-    })
-
-    const html = await res.text()
-    const finalUrl = res.url
-    const result: { name?: string; address?: string; hours?: string } = {}
-
-    // ── 1. Name ─────────────────────────────────────────────────────────────
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-    if (titleMatch?.[1]) {
-      result.name = titleMatch[1]
-        .replace(/\s*[-–—]\s*Google Maps\s*$/i, '')
-        .replace(/\s*\|[^|]*$/, '')
-        .trim()
-    }
-    // Fallback: extract name from URL path
-    const pathMatch = finalUrl.match(/\/maps\/place\/([^/@?&#]+)/)
-    if (pathMatch && (!result.name || result.name.length < 2)) {
-      result.name = decodeURIComponent(pathMatch[1].replace(/\+/g, ' ')).trim()
-    }
-
-    // ── 2. JSON-LD (most reliable when present) ──────────────────────────────
-    const BUSINESS_TYPES = new Set([
-      'LocalBusiness', 'Restaurant', 'FoodEstablishment',
-      'CafeOrCoffeeShop', 'BarOrPub', 'Bakery', 'IceCreamShop',
-    ])
-    const jsonLdRe = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-    let m: RegExpExecArray | null
-    while ((m = jsonLdRe.exec(html)) !== null) {
-      try {
-        const ld = JSON.parse(m[1])
-        const items: Record<string, unknown>[] = Array.isArray(ld) ? ld : [ld]
-        for (const item of items) {
-          if (!BUSINESS_TYPES.has(item['@type'] as string)) continue
-          if (!result.name && item.name) result.name = String(item.name)
-          if (item.address) {
-            const a = item.address as Record<string, string>
-            result.address = typeof a === 'string'
-              ? a
-              : [a.streetAddress, a.addressLocality, a.addressRegion, a.postalCode]
-                  .filter(Boolean).join(', ')
-          }
-          const DAY_SHORT: Record<string, string> = {
-            'https://schema.org/Monday': 'Mon', 'https://schema.org/Tuesday': 'Tue',
-            'https://schema.org/Wednesday': 'Wed', 'https://schema.org/Thursday': 'Thu',
-            'https://schema.org/Friday': 'Fri', 'https://schema.org/Saturday': 'Sat',
-            'https://schema.org/Sunday': 'Sun',
-          }
-          if (item.openingHoursSpecification) {
-            const specs = Array.isArray(item.openingHoursSpecification)
-              ? item.openingHoursSpecification : [item.openingHoursSpecification]
-            result.hours = (specs as Record<string, unknown>[]).map(s => {
-              const days = (Array.isArray(s.dayOfWeek) ? s.dayOfWeek : [s.dayOfWeek])
-                .map((d: unknown) => DAY_SHORT[String(d)] ?? String(d).replace('https://schema.org/', ''))
-                .join('/')
-              return `${days} ${s.opens ?? ''}–${s.closes ?? ''}`
-            }).join(', ')
-          } else if (item.openingHours) {
-            result.hours = Array.isArray(item.openingHours)
-              ? (item.openingHours as string[]).join(', ')
-              : String(item.openingHours)
-          }
-          break
-        }
-      } catch {}
-      if (result.address) break
-    }
-
-    // ── 3. Meta tags fallback (address + hours) ──────────────────────────────
-    if (!result.address) {
-      // Google Maps puts address in name="description", not just og:description
-      const candidates = [
-        getMeta(html, 'description'),
-        getMeta(html, 'og:description'),
-        getMeta(html, 'twitter:description'),
-      ]
-      for (const text of candidates) {
-        const addr = extractAddress(text)
-        if (addr) { result.address = addr; break }
-      }
-    }
-
-    return NextResponse.json(result)
-  } catch (err) {
-    console.error('[parse-gmaps]', err)
-    return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
+  if (!API_KEY) {
+    return NextResponse.json({ error: 'GOOGLE_PLACES_API_KEY not configured' }, { status: 500 })
   }
+
+  // Resolve short URLs (maps.app.goo.gl → full google.com/maps URL)
+  let fullUrl = url
+  if (url.includes('maps.app.goo.gl')) {
+    try {
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'curl/7.68.0' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(5000),
+      })
+      fullUrl = r.url
+    } catch {
+      return NextResponse.json({ error: 'Could not resolve short URL' }, { status: 500 })
+    }
+  }
+
+  // Try to get Place ID from URL data parameter
+  let placeId = extractPlaceId(fullUrl)
+
+  // Fallback: text search using the name in the URL path
+  if (!placeId) {
+    const pathName = fullUrl.match(/\/maps\/place\/([^/@?&#]+)/)?.[1]
+    const query = pathName ? decodeURIComponent(pathName.replace(/\+/g, ' ')) : null
+    if (!query) return NextResponse.json({ error: 'Cannot extract place from URL' }, { status: 400 })
+
+    const searchRes = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': API_KEY,
+        'X-Goog-FieldMask': 'places.id',
+      },
+      body: JSON.stringify({ textQuery: query }),
+      signal: AbortSignal.timeout(6000),
+    })
+    const searchData = await searchRes.json()
+    placeId = searchData?.places?.[0]?.id
+    if (!placeId) return NextResponse.json({ error: 'Place not found' }, { status: 404 })
+  }
+
+  // Fetch place details
+  const FIELDS = [
+    'displayName',
+    'formattedAddress',
+    'location',
+    'regularOpeningHours',
+    'rating',
+    'userRatingCount',
+    'priceLevel',
+    'primaryType',
+    'types',
+    'internationalPhoneNumber',
+    'websiteUri',
+  ].join(',')
+
+  const detailRes = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+    headers: {
+      'X-Goog-Api-Key': API_KEY,
+      'X-Goog-FieldMask': FIELDS,
+    },
+    signal: AbortSignal.timeout(6000),
+  })
+
+  if (!detailRes.ok) {
+    const err = await detailRes.json().catch(() => ({}))
+    console.error('[parse-gmaps] Places API error', err)
+    return NextResponse.json({ error: 'Places API error' }, { status: 502 })
+  }
+
+  const place = await detailRes.json()
+
+  // Detect cuisine from primaryType / types array
+  let cuisine: string | undefined
+  const typesToCheck: string[] = [place.primaryType, ...(place.types ?? [])].filter(Boolean)
+  for (const t of typesToCheck) {
+    if (TYPE_TO_CUISINE[t]) { cuisine = TYPE_TO_CUISINE[t]; break }
+  }
+
+  return NextResponse.json({
+    // Fields that auto-fill the form
+    name:     place.displayName?.text,
+    address:  place.formattedAddress,
+    hours:    formatHours(place.regularOpeningHours?.weekdayDescriptions ?? []),
+    cuisine,
+    // Extra info shown as a preview (not stored in current schema)
+    rating:          place.rating,
+    userRatingCount: place.userRatingCount,
+    priceLevel:      place.priceLevel,   // e.g. "PRICE_LEVEL_MODERATE"
+    phone:           place.internationalPhoneNumber,
+    website:         place.websiteUri,
+    location:        place.location,     // { latitude, longitude }
+  })
 }
