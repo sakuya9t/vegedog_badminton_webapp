@@ -117,6 +117,7 @@ export default function NewSessionPage() {
 
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
+  const [notifyFollowers, setNotifyFollowers] = useState(true)
 
   // Co-admin picker
   const [coAdmins,          setCoAdmins]          = useState<Profile[]>([])
@@ -208,11 +209,13 @@ export default function NewSessionPage() {
       }
 
       // Notify followers (fire-and-forget)
-      fetch('/api/notify-followers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      }).catch(() => {})
+      if (notifyFollowers) {
+        fetch('/api/notify-followers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+        }).catch(() => {})
+      }
 
       dirtyRef.current = false  // clear guard before navigating
       router.push(`/sessions/${sessionId}`)
@@ -429,6 +432,16 @@ export default function NewSessionPage() {
             )}
           </div>
         </div>
+
+        <label className="card flex items-center justify-between cursor-pointer select-none">
+          <span className="text-sm font-medium text-gray-700">通知关注我的人</span>
+          <input
+            type="checkbox"
+            checked={notifyFollowers}
+            onChange={e => setNotifyFollowers(e.target.checked)}
+            className="w-4 h-4 rounded accent-brand-600"
+          />
+        </label>
 
         {error && (
           <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-3">{error}</p>
