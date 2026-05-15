@@ -198,6 +198,23 @@ function RestaurantCard({ r, currentUserId, onRecommend }: CardProps) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+interface AppliedFilters {
+  cuisine: string
+  groupSize: string
+  reserveOnly: boolean
+  openNow: boolean
+}
+
+function applyFilters(list: RestaurantWithDetails[], f: AppliedFilters) {
+  return list.filter(r => {
+    if (f.cuisine && r.cuisine !== f.cuisine) return false
+    if (f.groupSize && r.group_size !== f.groupSize) return false
+    if (f.reserveOnly && !r.accepts_reservation) return false
+    if (f.openNow && !isOpenNow(r.hours)) return false
+    return true
+  })
+}
+
 interface Props {
   initialRestaurants: RestaurantWithDetails[]
   currentUserId: string
@@ -217,23 +234,27 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
     rating?: number; userRatingCount?: number; priceLevel?: string; phone?: string; website?: string
   } | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
-  const [showRandomPanel, setShowRandomPanel] = useState(false)
+
+  // Filter panel state
+  const [showFilterPanel, setShowFilterPanel] = useState(false)
   const [rfCuisine, setRfCuisine] = useState('')
   const [rfGroupSize, setRfGroupSize] = useState('')
   const [rfReserveOnly, setRfReserveOnly] = useState(false)
   const [rfOpenNow, setRfOpenNow] = useState(false)
-  // Store only the ID so picked card auto-reflects recommendation updates
+  const [appliedFilters, setAppliedFilters] = useState<AppliedFilters | null>(null)
   const [pickedId, setPickedId] = useState<string | null>(null)
+
+  const displayedRestaurants = useMemo(
+    () => appliedFilters ? applyFilters(restaurants, appliedFilters) : restaurants,
+    [restaurants, appliedFilters]
+  )
   const picked = pickedId ? (restaurants.find(r => r.id === pickedId) ?? null) : null
 
   const cuisineOptions = useMemo(() => {
     const seen = new Set(COMMON_CUISINES)
     const extras: string[] = []
     for (const r of restaurants) {
-      if (r.cuisine && !seen.has(r.cuisine)) {
-        seen.add(r.cuisine)
-        extras.push(r.cuisine)
-      }
+      if (r.cuisine && !seen.has(r.cuisine)) { seen.add(r.cuisine); extras.push(r.cuisine) }
     }
     return [...COMMON_CUISINES, ...extras]
   }, [restaurants])
@@ -242,10 +263,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
     const seen = new Set<string>()
     const result: string[] = []
     for (const r of restaurants) {
-      if (r.cuisine && !seen.has(r.cuisine)) {
-        seen.add(r.cuisine)
-        result.push(r.cuisine)
-      }
+      if (r.cuisine && !seen.has(r.cuisine)) { seen.add(r.cuisine); result.push(r.cuisine) }
     }
     return result
   }, [restaurants])
@@ -256,33 +274,59 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
   }
 
   function openModal() {
-    setForm(EMPTY_FORM)
-    setDishes([])
-    setNewDish('')
-    setParseMsg(null)
-    setParseExtra(null)
+    setForm(EMPTY_FORM); setDishes([]); setNewDish(''); setParseMsg(null); setParseExtra(null)
     setShowModal(true)
+  }
+
+  function getDraftFilters(): AppliedFilters {
+    return { cuisine: rfCuisine, groupSize: rfGroupSize, reserveOnly: rfReserveOnly, openNow: rfOpenNow }
+  }
+
+  function handleFilter() {
+    const f = getDraftFilters()
+    setAppliedFilters(f)
+    setPickedId(null)
+    setShowFilterPanel(false)
+    if (!applyFilters(restaurants, f).length) showToast('没有符合条件的餐厅', false)
+  }
+
+  function handleRandom() {
+    const f = getDraftFilters()
+    setAppliedFilters(f)
+    setShowFilterPanel(false)
+    const candidates = applyFilters(restaurants, f)
+    if (!candidates.length) { showToast('没有符合条件的餐厅', false); return }
+    setPickedId(candidates[Math.floor(Math.random() * candidates.length)].id)
+  }
+
+  function handleReRandom() {
+    if (!displayedRestaurants.length) return
+    setPickedId(displayedRestaurants[Math.floor(Math.random() * displayedRestaurants.length)].id)
+  }
+
+  function clearFilters() {
+    setAppliedFilters(null)
+    setPickedId(null)
+    setRfCuisine('')
+    setRfGroupSize('')
+    setRfReserveOnly(false)
+    setRfOpenNow(false)
   }
 
   async function handleParseGMaps() {
     const url = form.google_maps_url.trim()
     if (!url) return
-    setParsing(true)
-    setParseMsg(null)
+    setParsing(true); setParseMsg(null)
     try {
       const res = await fetch(`/api/parse-gmaps?url=${encodeURIComponent(url)}`)
       const data = await res.json()
-      if (data.error) {
-        setParseMsg({ text: '解析失败，请手动填写', ok: false })
-        return
-      }
+      if (data.error) { setParseMsg({ text: '解析失败，请手动填写', ok: false }); return }
       const filled: string[] = []
       const updates: Partial<typeof EMPTY_FORM> = {}
       if (data.name    && !form.name.trim())    { updates.name    = data.name;    filled.push('店名') }
       if (data.address && !form.address.trim()) { updates.address = data.address; filled.push('地址') }
       if (data.hours   && !form.hours.trim())   { updates.hours   = data.hours;   filled.push('营业时间') }
       if (data.cuisine && !form.cuisine.trim()) { updates.cuisine = data.cuisine; filled.push('菜系') }
-
       if (filled.length > 0) {
         setForm(f => ({ ...f, ...updates }))
         setParseMsg({ text: `已自动填入：${filled.join('、')}`, ok: true })
@@ -291,15 +335,8 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
       } else {
         setParseMsg({ text: '字段已有内容，未覆盖', ok: true })
       }
-
       if (data.rating || data.phone || data.website) {
-        setParseExtra({
-          rating: data.rating,
-          userRatingCount: data.userRatingCount,
-          priceLevel: data.priceLevel,
-          phone: data.phone,
-          website: data.website,
-        })
+        setParseExtra({ rating: data.rating, userRatingCount: data.userRatingCount, priceLevel: data.priceLevel, phone: data.phone, website: data.website })
       }
     } catch {
       setParseMsg({ text: '解析失败，请手动填写', ok: false })
@@ -311,8 +348,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
   function addDish() {
     const d = newDish.trim()
     if (!d || dishes.includes(d)) return
-    setDishes(prev => [...prev, d])
-    setNewDish('')
+    setDishes(prev => [...prev, d]); setNewDish('')
   }
 
   async function handleSubmit() {
@@ -322,48 +358,26 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
       const { data: restaurant, error } = await supabase
         .from('restaurants')
         .insert({
-          name: form.name.trim(),
-          cuisine: form.cuisine.trim() || null,
-          distance: form.distance.trim() || null,
-          address: form.address.trim() || null,
-          hours: form.hours.trim() || null,
-          yelp_url: form.yelp_url.trim() || null,
+          name: form.name.trim(), cuisine: form.cuisine.trim() || null,
+          distance: form.distance.trim() || null, address: form.address.trim() || null,
+          hours: form.hours.trim() || null, yelp_url: form.yelp_url.trim() || null,
           google_maps_url: form.google_maps_url.trim() || null,
-          has_wait: form.has_wait,
-          accepts_reservation: form.accepts_reservation,
-          group_size: form.group_size || null,
-          added_by: currentUserId,
+          has_wait: form.has_wait, accepts_reservation: form.accepts_reservation,
+          group_size: form.group_size || null, added_by: currentUserId,
         })
-        .select('id')
-        .single()
-
-      if (error || !restaurant) {
-        showToast('添加失败，请重试', false)
-        return
-      }
-
+        .select('id').single()
+      if (error || !restaurant) { showToast('添加失败，请重试', false); return }
       if (dishes.length > 0) {
         await supabase.from('restaurant_dishes').insert(
           dishes.map(d => ({ restaurant_id: restaurant.id, name: d, added_by: currentUserId }))
         )
       }
-
       const { data: full } = await supabase
         .from('restaurants')
-        .select(`
-          *,
-          adder:profiles!added_by(id, nickname, avatar_url),
-          dishes:restaurant_dishes(id, name, added_by),
-          recommendations:restaurant_recommendations(id, user_id, recommended)
-        `)
-        .eq('id', restaurant.id)
-        .single()
-
-      if (full) {
-        setRestaurants(prev => [full as unknown as RestaurantWithDetails, ...prev])
-      }
-      setShowModal(false)
-      showToast('餐厅已添加！')
+        .select(`*, adder:profiles!added_by(id, nickname, avatar_url), dishes:restaurant_dishes(id, name, added_by), recommendations:restaurant_recommendations(id, user_id, recommended)`)
+        .eq('id', restaurant.id).single()
+      if (full) setRestaurants(prev => [full as unknown as RestaurantWithDetails, ...prev])
+      setShowModal(false); showToast('餐厅已添加！')
     } finally {
       setSubmitting(false)
     }
@@ -373,24 +387,17 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
     const r = restaurants.find(r => r.id === restaurantId)
     if (!r) return
     const existing = r.recommendations.find(rec => rec.user_id === currentUserId)
-
     if (existing?.recommended === value) {
       setRestaurants(prev => prev.map(r =>
-        r.id !== restaurantId ? r : {
-          ...r, recommendations: r.recommendations.filter(rec => rec.user_id !== currentUserId)
-        }
+        r.id !== restaurantId ? r : { ...r, recommendations: r.recommendations.filter(rec => rec.user_id !== currentUserId) }
       ))
-      await supabase.from('restaurant_recommendations')
-        .delete()
-        .eq('restaurant_id', restaurantId)
-        .eq('user_id', currentUserId)
+      await supabase.from('restaurant_recommendations').delete()
+        .eq('restaurant_id', restaurantId).eq('user_id', currentUserId)
     } else {
       const newRec: RestaurantRecommendation = {
         id: existing?.id ?? crypto.randomUUID(),
-        restaurant_id: restaurantId,
-        user_id: currentUserId,
-        recommended: value,
-        created_at: new Date().toISOString(),
+        restaurant_id: restaurantId, user_id: currentUserId,
+        recommended: value, created_at: new Date().toISOString(),
       }
       setRestaurants(prev => prev.map(r =>
         r.id !== restaurantId ? r : {
@@ -407,66 +414,55 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
     }
   }
 
-  function handleRandom() {
-    const candidates = restaurants.filter(r => {
-      if (rfCuisine && r.cuisine !== rfCuisine) return false
-      if (rfGroupSize && r.group_size !== rfGroupSize) return false
-      if (rfReserveOnly && !r.accepts_reservation) return false
-      if (rfOpenNow && !isOpenNow(r.hours)) return false
-      return true
-    })
-    if (!candidates.length) {
-      showToast('没有符合条件的餐厅', false)
-      return
-    }
-    setPickedId(candidates[Math.floor(Math.random() * candidates.length)].id)
-  }
-
   const chipCls = (active: boolean) =>
     `text-xs px-2.5 py-1 rounded-full border transition-colors ${
-      active
-        ? 'border-amber-400 bg-amber-50 text-amber-700'
-        : 'border-gray-200 bg-white text-gray-500 active:bg-gray-50'
+      active ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-500 active:bg-gray-50'
     }`
 
   const toggleCls = (active: boolean) =>
     `flex-1 py-2 px-3 rounded-xl border text-sm font-medium transition-colors ${
-      active
-        ? 'border-amber-400 bg-amber-50 text-amber-700'
-        : 'border-gray-200 bg-white text-gray-400'
+      active ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-400'
     }`
+
+  const hasActiveFilters = appliedFilters && (
+    appliedFilters.cuisine || appliedFilters.groupSize || appliedFilters.reserveOnly || appliedFilters.openNow
+  )
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">赛后总结</h1>
         <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-gray-900">赛后总结</h1>
           {restaurants.length > 0 && (
             <button
-              onClick={() => { setShowRandomPanel(p => !p); setPickedId(null) }}
-              className={`text-sm font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-                showRandomPanel
+              onClick={() => setShowFilterPanel(p => !p)}
+              className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
+                showFilterPanel || hasActiveFilters
                   ? 'border-amber-400 bg-amber-50 text-amber-600'
-                  : 'border-gray-200 bg-white text-gray-600 active:bg-gray-50'
+                  : 'border-gray-200 bg-white text-gray-500 active:bg-gray-50'
               }`}
             >
-              🎲 随机
+              <svg className="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M1.5 3h13a.5.5 0 0 1 .4.8L10 9.4V14a.5.5 0 0 1-.8.4l-3-2A.5.5 0 0 1 6 12V9.4L1.1 3.8A.5.5 0 0 1 1.5 3z"/>
+              </svg>
+              筛选
+              {hasActiveFilters && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 ml-0.5" />}
             </button>
           )}
-          <button
-            onClick={openModal}
-            className="text-sm font-semibold text-white bg-brand-600 px-3 py-1.5 rounded-lg active:bg-brand-700 transition-colors"
-          >
-            + 添加餐厅
-          </button>
         </div>
+        <button
+          onClick={openModal}
+          className="text-sm font-semibold text-white bg-brand-600 px-3 py-1.5 rounded-lg active:bg-brand-700 transition-colors"
+        >
+          + 添加餐厅
+        </button>
       </div>
 
-      {/* Random filter panel */}
-      {showRandomPanel && (
+      {/* Filter panel */}
+      {showFilterPanel && (
         <div className="card space-y-3 border-amber-200 bg-amber-50/30">
-          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">随机条件</p>
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">筛选条件</p>
 
           {existingCuisines.length > 0 && (
             <div>
@@ -503,11 +499,33 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
             </button>
           </div>
 
-          <button
-            onClick={handleRandom}
-            className="w-full py-2.5 rounded-xl bg-amber-500 text-white font-semibold text-sm active:bg-amber-600 transition-colors"
-          >
-            🎲 开始抽签
+          <div className="flex gap-2">
+            <button
+              onClick={handleFilter}
+              className="flex-1 py-2.5 rounded-xl border border-amber-400 bg-white text-amber-600 font-semibold text-sm active:bg-amber-50 transition-colors"
+            >
+              筛选确认
+            </button>
+            <button
+              onClick={handleRandom}
+              className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white font-semibold text-sm active:bg-amber-600 transition-colors"
+            >
+              🎲 随机抽签
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Filtered results status */}
+      {appliedFilters && (
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-gray-500">
+            {displayedRestaurants.length === 0
+              ? '无符合条件的餐厅'
+              : `${displayedRestaurants.length} 家符合条件`}
+          </span>
+          <button onClick={clearFilters} className="text-gray-400 underline underline-offset-2 active:text-gray-600">
+            清除筛选
           </button>
         </div>
       )}
@@ -527,7 +545,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
           <RestaurantCard r={picked} currentUserId={currentUserId} onRecommend={handleRecommend} />
           <div className="flex gap-2 pt-1 border-t border-amber-100">
             <button
-              onClick={handleRandom}
+              onClick={handleReRandom}
               className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold active:bg-amber-600 transition-colors"
             >
               再来一次
@@ -543,7 +561,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
       )}
 
       {/* Restaurant list */}
-      {restaurants.length === 0 ? (
+      {displayedRestaurants.length === 0 && !appliedFilters ? (
         <div className="card text-center py-12 text-gray-400">
           <p className="text-3xl mb-2">🍜</p>
           <p className="text-sm">还没有推荐的餐厅</p>
@@ -551,7 +569,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
         </div>
       ) : (
         <div className="space-y-4">
-          {restaurants.map(r => (
+          {displayedRestaurants.map(r => (
             <div key={r.id} className="card space-y-3">
               <RestaurantCard r={r} currentUserId={currentUserId} onRecommend={handleRecommend} />
             </div>
@@ -712,7 +730,6 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
               {/* Tags */}
               <div className="space-y-3">
                 <p className="text-xs font-medium text-gray-500">标签</p>
-
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -737,7 +754,6 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
                     {form.accepts_reservation ? '✓' : '○'} 可以预约
                   </button>
                 </div>
-
                 <div>
                   <p className="text-xs text-gray-400 mb-2">适合规模</p>
                   <div className="flex flex-wrap gap-2">
@@ -803,10 +819,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId }: P
             </div>
 
             <div className="px-4 py-3 border-t border-gray-100 flex gap-3 shrink-0">
-              <button
-                onClick={() => setShowModal(false)}
-                className="btn-secondary flex-1 py-2.5 text-sm"
-              >
+              <button onClick={() => setShowModal(false)} className="btn-secondary flex-1 py-2.5 text-sm">
                 取消
               </button>
               <button
