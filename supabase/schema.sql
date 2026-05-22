@@ -11,6 +11,7 @@ create table public.profiles (
   nickname       text not null default '',
   avatar_url     text,
   venmo_username text,
+  is_admin       boolean not null default false,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
@@ -64,8 +65,19 @@ create table public.payment_records (
   status         text not null default 'unpaid'
                    check (status in ('unpaid', 'paid', 'waived')),
   note           text,
+  reminder_sent  boolean not null default false,
   updated_at     timestamptz not null default now(),
   unique (participant_id)
+);
+
+create table public.participant_renames (
+  id             uuid primary key default gen_random_uuid(),
+  session_id     uuid not null references public.sessions(id) on delete cascade,
+  participant_id uuid not null references public.participants(id) on delete cascade,
+  user_id        uuid not null references public.profiles(id),
+  old_name       text not null,
+  new_name       text not null,
+  created_at     timestamptz not null default now()
 );
 
 create table public.follows (
@@ -289,23 +301,63 @@ create trigger on_session_created
   after insert on public.sessions
   for each row execute function public.add_initiator_as_admin();
 
+-- Rename own participant entry (records the rename in participant_renames for the timeline)
+create or replace function public.rename_participant(
+  p_participant_id uuid,
+  p_new_name       text
+)
+returns public.participants
+language plpgsql security definer
+as $$
+declare
+  v_participant public.participants;
+  v_old_name    text;
+  v_new_name    text;
+begin
+  v_new_name := btrim(p_new_name);
+  if v_new_name = '' then raise exception 'New name cannot be empty'; end if;
+
+  select * into v_participant from public.participants where id = p_participant_id;
+  if not found then raise exception 'Participant not found'; end if;
+  if v_participant.user_id != auth.uid() then raise exception 'Not your entry'; end if;
+
+  v_old_name := v_participant.display_name;
+  if v_old_name = v_new_name then return v_participant; end if;
+
+  update public.participants
+     set display_name = v_new_name
+   where id = p_participant_id
+   returning * into v_participant;
+
+  insert into public.participant_renames (session_id, participant_id, user_id, old_name, new_name)
+  values (v_participant.session_id, v_participant.id, v_participant.user_id, v_old_name, v_new_name);
+
+  return v_participant;
+end;
+$$;
+
+grant execute on function public.rename_participant to authenticated;
+
 -- ============================================================
 -- 3. REALTIME
 -- ============================================================
 
 alter publication supabase_realtime add table public.participants;
+alter publication supabase_realtime add table public.payment_records;
+alter publication supabase_realtime add table public.participant_renames;
 
 -- ============================================================
 -- 4. ROW LEVEL SECURITY
 -- ============================================================
 
-alter table public.profiles        enable row level security;
-alter table public.sessions        enable row level security;
-alter table public.participants    enable row level security;
-alter table public.payment_methods enable row level security;
-alter table public.payment_records enable row level security;
-alter table public.follows         enable row level security;
-alter table public.session_admins  enable row level security;
+alter table public.profiles            enable row level security;
+alter table public.sessions            enable row level security;
+alter table public.participants        enable row level security;
+alter table public.payment_methods     enable row level security;
+alter table public.payment_records     enable row level security;
+alter table public.follows             enable row level security;
+alter table public.session_admins      enable row level security;
+alter table public.participant_renames enable row level security;
 
 -- profiles
 create policy "profiles_select_all" on public.profiles for select using (true);
@@ -394,19 +446,146 @@ create policy "admins_delete_admin" on public.session_admins
     and user_id != (select initiator_id from public.sessions where id = session_id)
   );
 
+-- participant_renames (read-only for everyone; writes happen via rename_participant RPC)
+create policy "renames_select_all" on public.participant_renames for select using (true);
+
 -- ============================================================
--- 5. GRANTS
+-- 5. STORAGE: avatars bucket (user-uploaded profile pictures)
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+  values ('avatars', 'avatars', true)
+  on conflict (id) do nothing;
+
+-- Anyone can read avatars (they're public profile pictures).
+create policy "avatars_public_read" on storage.objects for select
+  using (bucket_id = 'avatars');
+
+-- Users can upload to a folder named after their own auth uid (path: <uid>/avatar.jpg).
+create policy "avatars_insert_own" on storage.objects for insert
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "avatars_update_own" on storage.objects for update
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "avatars_delete_own" on storage.objects for delete
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ============================================================
+-- 6. GRANTS
 -- ============================================================
 
 grant usage on schema public to anon, authenticated;
 grant all on all tables in schema public to anon, authenticated;
 grant all on all functions in schema public to anon, authenticated;
-grant execute on function public.join_session to authenticated;
+grant execute on function public.join_session         to authenticated;
 grant execute on function public.withdraw_participant to authenticated;
+grant execute on function public.rename_participant   to authenticated;
 
 -- ============================================================
--- 6. INDEXES
+-- 7. INDEXES
 -- ============================================================
 
 create index if not exists idx_sessions_starts_at   on public.sessions(starts_at);
 create index if not exists idx_participants_session  on public.participants(session_id, queue_position);
+
+-- ============================================================
+-- 7. RESTAURANTS (赛后总结)
+-- ============================================================
+
+create table public.restaurants (
+  id                   uuid primary key default gen_random_uuid(),
+  name                 text not null,
+  cuisine              text,
+  distance             text,
+  address              text,
+  hours                text,
+  yelp_url             text,
+  google_maps_url      text,
+  has_wait             boolean not null default false,
+  accepts_reservation  boolean not null default false,
+  group_size           text,
+  added_by             uuid references public.profiles(id),
+  last_updated_by      uuid references public.profiles(id),
+  created_at           timestamptz not null default now()
+);
+
+create table public.restaurant_dishes (
+  id            uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  name          text not null,
+  added_by      uuid references public.profiles(id),
+  created_at    timestamptz not null default now()
+);
+
+create table public.restaurant_recommendations (
+  id            uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  user_id       uuid not null references public.profiles(id),
+  recommended   boolean not null,
+  created_at    timestamptz not null default now(),
+  unique(restaurant_id, user_id)
+);
+
+alter table public.restaurants               enable row level security;
+alter table public.restaurant_dishes         enable row level security;
+alter table public.restaurant_recommendations enable row level security;
+
+-- restaurants
+create policy "restaurants_select_auth"  on public.restaurants for select using (auth.uid() is not null);
+create policy "restaurants_insert_auth"  on public.restaurants for insert with check (auth.uid() = added_by);
+create policy "restaurants_update_auth"  on public.restaurants for update using (auth.uid() is not null);
+-- Admin can delete anything; regular users can only delete if they added it and no one else has edited it
+create policy "restaurants_delete_auth"  on public.restaurants for delete using (
+  exists (select 1 from public.profiles where id = auth.uid() and is_admin = true)
+  or (
+    auth.uid() = added_by
+    and (last_updated_by is null or last_updated_by = auth.uid())
+  )
+);
+
+-- restaurant_dishes
+create policy "dishes_select_auth"   on public.restaurant_dishes for select using (auth.uid() is not null);
+create policy "dishes_insert_auth"   on public.restaurant_dishes for insert with check (auth.uid() = added_by);
+create policy "dishes_delete_own"    on public.restaurant_dishes for delete using (auth.uid() = added_by);
+
+-- restaurant_recommendations
+create policy "recs_select_auth"  on public.restaurant_recommendations for select using (auth.uid() is not null);
+create policy "recs_all_own"      on public.restaurant_recommendations for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create table public.restaurant_tags (
+  id            uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  name          text not null,
+  added_by      uuid references public.profiles(id),
+  created_at    timestamptz not null default now(),
+  unique(restaurant_id, name)
+);
+
+alter table public.restaurant_tags enable row level security;
+
+create policy "tags_select_auth"  on public.restaurant_tags for select using (auth.uid() is not null);
+create policy "tags_insert_auth"  on public.restaurant_tags for insert with check (auth.uid() = added_by);
+create policy "tags_delete_own"   on public.restaurant_tags for delete using (auth.uid() = added_by);
+
+create index if not exists idx_restaurant_dishes_restaurant on public.restaurant_dishes(restaurant_id);
+create index if not exists idx_recs_restaurant on public.restaurant_recommendations(restaurant_id);
+create index if not exists idx_restaurant_tags_restaurant on public.restaurant_tags(restaurant_id);
+
+-- Migration (run in Supabase SQL editor if tables already exist):
+-- drop policy if exists "restaurants_update_own" on public.restaurants;
+-- drop policy if exists "restaurants_delete_own" on public.restaurants;
+-- drop policy if exists "restaurants_delete_auth" on public.restaurants;
+-- create policy "restaurants_update_auth" on public.restaurants for update using (auth.uid() is not null);
+-- alter table public.restaurants add column if not exists last_updated_by uuid references public.profiles(id);
+-- create policy "restaurants_delete_auth" on public.restaurants for delete using (
+--   exists (select 1 from public.profiles where id = auth.uid() and is_admin = true)
+--   or (auth.uid() = added_by and (last_updated_by is null or last_updated_by = auth.uid()))
+-- );
+-- create table if not exists public.restaurant_tags ( ... see above ... );
+-- update public.profiles set is_admin = true
+--   where id = (select id from auth.users where email = 'vegabaixuan@gmail.com');
+create index if not exists idx_sessions_starts_at     on public.sessions(starts_at);
+create index if not exists idx_participants_session   on public.participants(session_id, queue_position);
+create index if not exists idx_renames_session        on public.participant_renames(session_id, created_at desc);
