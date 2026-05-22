@@ -83,4 +83,4 @@
 
 ## 🚀 开发与测试
 
-See [docs/development.md](docs/development.md) for the full setup guide — Supabase, Google OAuth, environment variables, branching strategy, and E2E tests.
+New team member? Start with [docs/development.md](docs/development.md). It walks through running a local Supabase stack (Docker + Supabase CLI) so you can develop without any shared credentials, and covers env vars, branching, and E2E tests.
