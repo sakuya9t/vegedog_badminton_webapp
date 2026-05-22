@@ -796,7 +796,7 @@ export default function PostMatchClient({ initialRestaurants, currentUserId, isA
             <button onClick={() => setPickedId(null)} className="w-6 h-6 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 text-lg leading-none">×</button>
           </div>
           <RestaurantCard r={picked} currentUserId={currentUserId} onRecommend={handleRecommend} onEdit={openEditModal} onDelete={
-              isAdmin || (r.added_by === currentUserId && (!r.last_updated_by || r.last_updated_by === currentUserId))
+              isAdmin || (picked.added_by === currentUserId && (!picked.last_updated_by || picked.last_updated_by === currentUserId))
                 ? handleDelete
                 : undefined
             } />
