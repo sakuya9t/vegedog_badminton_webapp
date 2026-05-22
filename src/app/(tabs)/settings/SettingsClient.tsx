@@ -721,7 +721,7 @@ function AboutTab({ changelog, version }: { changelog: ChangelogEntry[]; version
         <p>Version: {version}</p>
         <p>Author: Yang</p>
         <p className="break-all">Github: <a href="https://github.com/leotralino/vegedog_badminton_webapp" target="_blank" rel="noopener noreferrer" className="underline text-blue-600">github.com/leotralino/vegedog_badminton_webapp</a></p>
-        <p>Contributors: 茶茶不吃饭</p>
+        <p>Contributors: 茶茶不吃饭, Vega</p>
       </div>
 
       <hr className="border-gray-200" />
