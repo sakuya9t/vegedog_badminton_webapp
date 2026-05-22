@@ -47,6 +47,19 @@ const tabs = [
     ),
   },
   {
+    href: '/post-match',
+    label: '赛后总结',
+    icon: (active: boolean) => (
+      <svg className={`w-6 h-6 ${active ? 'text-brand-600' : 'text-gray-400'}`}
+        viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 2v7c0 1.1.9 2 2 2h2V2"/>
+        <path d="M7 2v20"/>
+        <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/>
+      </svg>
+    ),
+  },
+  {
     href: '/settings',
     label: '设置',
     icon: (active: boolean) => (
