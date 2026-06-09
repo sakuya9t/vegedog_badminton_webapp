@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
 
   const admin = createAdminClient()
 
+  // Triggered daily at 6am by cron-job.org — emails every unpaid participant
+  // in every locked session until they mark themselves as paid.
   const { data: sessions } = await admin
     .from('sessions')
     .select('id, title, starts_at, location')
