@@ -1,11 +1,15 @@
 export const runtime = 'nodejs'
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatSessionDate } from '@/lib/dates'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const secret = process.env.CRON_SECRET
+  if (secret && req.nextUrl.searchParams.get('secret') !== secret)
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   if (process.env.ENABLE_EMAIL !== 'true') return NextResponse.json({ ok: true, skipped: true })
 
   const gmailUser = process.env.GMAIL_USER
@@ -14,12 +18,12 @@ export async function GET() {
 
   const admin = createAdminClient()
 
-  // Find locked sessions whose starts_at was >= 24h ago (UTC — 24h is 24h regardless of timezone)
+  // Triggered daily at 6am by cron-job.org — emails every unpaid participant
+  // in every locked session until they mark themselves as paid.
   const { data: sessions } = await admin
     .from('sessions')
     .select('id, title, starts_at, location')
     .eq('status', 'locked')
-    .lte('starts_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString())
 
   if (!sessions?.length) return NextResponse.json({ ok: true, count: 0 })
 
@@ -31,13 +35,12 @@ export async function GET() {
   let sent = 0
 
   for (const session of sessions) {
-    // Find unpaid participants who haven't been reminded yet
+    // Find unpaid participants
     const { data: records } = await admin
       .from('payment_records')
       .select('id, participant_id')
       .eq('session_id', session.id)
       .eq('status', 'unpaid')
-      .eq('reminder_sent', false)
 
     if (!records?.length) continue
 
@@ -64,15 +67,6 @@ export async function GET() {
         subject: `💰 付款提醒 — ${session.title}`,
         text: `${participant.display_name} 您好，\n\n您在「${session.title}」（${dateStr}）中尚未完成付款。\n\n请完成转账后在接龙页面点击「❗标记已支付」。\n\n查看接龙：${sessionUrl}\n\n-菜狗群AI管理员`,
       })
-
-      // Mark reminder as sent
-      const record = records.find(r => r.participant_id === participant.id)
-      if (record) {
-        await admin
-          .from('payment_records')
-          .update({ reminder_sent: true })
-          .eq('id', record.id)
-      }
 
       sent++
     }
