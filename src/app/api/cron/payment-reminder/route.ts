@@ -18,13 +18,12 @@ export async function GET(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Find locked sessions whose starts_at was >= 12h ago — cron runs every 12h so this
-  // naturally sends reminders at 12h, 24h, 36h, ... intervals until paid
+  // Find locked sessions whose starts_at was >= 24h ago
   const { data: sessions } = await admin
     .from('sessions')
     .select('id, title, starts_at, location')
     .eq('status', 'locked')
-    .lte('starts_at', new Date(Date.now() - 12 * 3600 * 1000).toISOString())
+    .lte('starts_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString())
 
   if (!sessions?.length) return NextResponse.json({ ok: true, count: 0 })
 
