@@ -19,11 +19,13 @@ export async function GET(req: NextRequest) {
   const admin = createAdminClient()
 
   // Triggered daily at 6am by cron-job.org — emails every unpaid participant
-  // in every locked session until they mark themselves as paid.
+  // in every locked session whose starts_at was >8h ago (session is definitely over),
+  // until they mark themselves as paid.
   const { data: sessions } = await admin
     .from('sessions')
     .select('id, title, starts_at, location')
     .eq('status', 'locked')
+    .lte('starts_at', new Date(Date.now() - 8 * 3600 * 1000).toISOString())
 
   if (!sessions?.length) return NextResponse.json({ ok: true, count: 0 })
 
