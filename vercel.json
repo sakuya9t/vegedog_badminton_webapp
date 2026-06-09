@@ -3,10 +3,6 @@
     {
       "path": "/api/ping",
       "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/cron/payment-reminder",
-      "schedule": "0 */12 * * *"
     }
   ]
 }

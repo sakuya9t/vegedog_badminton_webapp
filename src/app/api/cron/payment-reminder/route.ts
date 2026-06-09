@@ -1,11 +1,15 @@
 export const runtime = 'nodejs'
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatSessionDate } from '@/lib/dates'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const secret = process.env.CRON_SECRET
+  if (secret && req.nextUrl.searchParams.get('secret') !== secret)
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   if (process.env.ENABLE_EMAIL !== 'true') return NextResponse.json({ ok: true, skipped: true })
 
   const gmailUser = process.env.GMAIL_USER
