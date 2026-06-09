@@ -31,13 +31,12 @@ export async function GET() {
   let sent = 0
 
   for (const session of sessions) {
-    // Find unpaid participants who haven't been reminded yet
+    // Find unpaid participants
     const { data: records } = await admin
       .from('payment_records')
       .select('id, participant_id')
       .eq('session_id', session.id)
       .eq('status', 'unpaid')
-      .eq('reminder_sent', false)
 
     if (!records?.length) continue
 
@@ -64,15 +63,6 @@ export async function GET() {
         subject: `💰 付款提醒 — ${session.title}`,
         text: `${participant.display_name} 您好，\n\n您在「${session.title}」（${dateStr}）中尚未完成付款。\n\n请完成转账后在接龙页面点击「❗标记已支付」。\n\n查看接龙：${sessionUrl}\n\n-菜狗群AI管理员`,
       })
-
-      // Mark reminder as sent
-      const record = records.find(r => r.participant_id === participant.id)
-      if (record) {
-        await admin
-          .from('payment_records')
-          .update({ reminder_sent: true })
-          .eq('id', record.id)
-      }
 
       sent++
     }
