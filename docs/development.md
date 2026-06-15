@@ -30,6 +30,38 @@ supabase --version
 
 > The repo already ships a `supabase/config.toml`, so **don't** run `supabase init` — it would clobber the committed config. Just `supabase start`.
 
+### Installing the Supabase CLI
+
+> The command is `supabase` (not `superbase`). If you get `zsh: command not found: supabase`, it isn't installed yet — pick the option for your platform below, then re-run `supabase --version`.
+
+**macOS / Linux (Homebrew, recommended):**
+
+```bash
+brew install supabase/tap/supabase
+```
+
+To upgrade later: `brew upgrade supabase`.
+
+**Windows (Scoop):**
+
+```bash
+scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+scoop install supabase
+```
+
+**Any platform, no package manager (npm devDependency):**
+
+The Supabase CLI is **not** installable as a global npm package (`npm i -g supabase` is unsupported). Instead add it as a dev dependency and call it through `npx`:
+
+```bash
+npm install --save-dev supabase
+npx supabase --version    # then use `npx supabase start`, `npx supabase status`, etc.
+```
+
+**Direct binary:** download the latest release for your OS from [github.com/supabase/cli/releases](https://github.com/supabase/cli/releases) and put it on your `PATH`.
+
+Full details: [Supabase CLI getting started](https://supabase.com/docs/guides/local-development/cli/getting-started).
+
 ### 1. Clone and install
 
 ```bash

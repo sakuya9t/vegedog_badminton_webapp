@@ -593,6 +593,7 @@ Next.js API routes are serverless functions that run on Vercel (not in the brows
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/api/notify-followers` | POST | Sends email to followers when a new session is created. Uses `SUPABASE_SERVICE_ROLE_KEY` to read `auth.users` emails (not accessible from browser) |
+| `/api/notify-match-confirmation` | POST | Emails the registered opponents/teammate of a 对战 (match) when the recorder requests confirmation. See `docs/versus-design.md` |
 | `/api/send-court-email` | POST | Sends the session roster to the court's email address |
 | `/api/ping` | GET | Lightweight DB query to keep the free-tier Supabase project from pausing due to inactivity (called by Vercel cron daily) |
 
@@ -610,7 +611,7 @@ src/
 │   ├── (tabs)/                        # Tab-navigated pages (shared bottom nav)
 │   │   ├── sessions/page.tsx          # Server component: active sessions list
 │   │   ├── history/page.tsx           # Server component: past sessions
-│   │   ├── cup/page.tsx               # 菜狗杯 placeholder
+│   │   ├── versus/                    # 对战 tab: 对局 / 对战历史 / 菜狗杯 sub-views
 │   │   └── settings/
 │   │       ├── page.tsx               # Server component: reads CHANGELOG.md at build time
 │   │       └── SettingsClient.tsx     # Client component: all interactive settings logic
@@ -621,23 +622,30 @@ src/
 │   │   │   └── SessionDetailClient.tsx # Client component: join/withdraw/lock/pay/etc.
 │   │   └── new/page.tsx               # Client component: create session form
 │   │
+│   ├── versus/
+│   │   ├── [id]/                      # Match detail: score entry, confirm flow, realtime
+│   │   └── new/page.tsx               # Create-match form (singles/doubles, member pickers)
+│   │
 │   ├── login/page.tsx                 # Client component: Google/magic link/password login
 │   ├── auth/callback/route.ts         # OAuth redirect handler (exchanges code for session)
 │   │
 │   └── api/
 │       ├── notify-followers/route.ts  # Sends follower email notifications
+│       ├── notify-match-confirmation/route.ts # Emails match participants to confirm a result
 │       ├── send-court-email/route.ts  # Sends roster to court
 │       └── ping/route.ts             # DB keep-alive for free-tier Supabase
 │
 ├── components/
 │   ├── Navbar.tsx                     # Server component: top nav with avatar
 │   ├── NavbarActions.tsx              # Client component: logout button
-│   ├── BottomNav.tsx                  # Client component: tab bar (sessions/history/settings)
+│   ├── BottomNav.tsx                  # Client component: tab bar (sessions/history/versus/...)
+│   ├── MemberPicker.tsx              # Nickname-search member picker (+ guest force-input)
 │   └── SessionCard.tsx                # Server component: session summary card
 │
 ├── lib/
 │   ├── types.ts                       # TypeScript interfaces for all DB tables
 │   ├── dates.ts                       # Date formatting utilities
+│   ├── match.ts                       # 对战 result helpers (games won, winner, score line)
 │   ├── locations.ts                   # Preset venue list
 │   └── supabase/
 │       ├── client.ts                  # Browser Supabase client (reads auth from cookies)
@@ -647,10 +655,12 @@ src/
 
 supabase/
 ├── schema.sql                         # All tables, RLS policies, triggers, functions — single source of truth
+├── migrations_versus.sql              # 对战 feature migration to run on the existing live DB
 └── patches.sql                        # Retired (all patches merged into schema.sql)
 
 docs/
 ├── architecture.md                    # This file
+├── versus-design.md                   # 对战 (match) feature design + Phase 2 rating plan
 └── development.md                     # Setup guide for new environments
 
 vercel.json                            # Cron job config (daily ping)

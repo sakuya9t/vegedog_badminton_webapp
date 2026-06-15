@@ -36,6 +36,11 @@ export function defaultWithdrawDeadline(startsAtLocal: string): string {
   return toDatetimeLocal(zd)
 }
 
+/** Now, in Pacific time, as a "YYYY-MM-DDTHH:mm" datetime-local string */
+export function defaultNowLocal(): string {
+  return toDatetimeLocal(toZonedTime(new Date(), PACIFIC))
+}
+
 /** Round a datetime-local string to nearest 15 minutes */
 export function roundTo15(value: string): string {
   const d = new Date(value)

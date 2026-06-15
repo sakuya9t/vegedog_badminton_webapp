@@ -159,3 +159,68 @@ export interface RestaurantWithDetails extends Restaurant {
   recommendations: RestaurantRecommendation[]
   tags:            RestaurantTag[]
 }
+
+// ── 对战 (Versus / Match) types ───────────────────────────────────────────────
+
+export type MatchType   = 'singles' | 'doubles'
+export type MatchStatus = 'draft' | 'pending' | 'published' | 'canceled'
+
+export interface Match {
+  id:           string
+  type:         MatchType
+  recorder_id:  string
+  status:       MatchStatus
+  is_public:    boolean
+  played_at:    string   // ISO8601 UTC
+  note:         string | null
+  created_at:   string
+  published_at: string | null
+}
+
+export interface MatchParticipant {
+  id:           string
+  match_id:     string
+  user_id:      string | null   // null for guests (+1)
+  is_guest:     boolean
+  team:         1 | 2            // 1 = recorder's side
+  is_recorder:  boolean
+  confirmed:    boolean
+  confirmed_at: string | null
+  display_name: string
+  created_at:   string
+}
+
+export interface MatchParticipantWithProfile extends MatchParticipant {
+  profile: Pick<Profile, 'id' | 'nickname' | 'avatar_url'> | null
+}
+
+export interface MatchGame {
+  id:          string
+  match_id:    string
+  game_no:     number
+  team1_score: number
+  team2_score: number
+  created_at:  string
+}
+
+export interface MatchWithDetails extends Match {
+  recorder:     Pick<Profile, 'id' | 'nickname' | 'avatar_url'>
+  participants: MatchParticipantWithProfile[]
+  games:        MatchGame[]
+}
+
+/** A single game's scores, as entered in the score table (before persistence). */
+export interface GameInput {
+  game_no:     number
+  team1_score: number
+  team2_score: number
+}
+
+/** A participant slot as collected by the create form (before persistence). */
+export interface ParticipantInput {
+  user_id:      string | null
+  is_guest:     boolean
+  team:         1 | 2
+  is_recorder:  boolean
+  display_name: string
+}
