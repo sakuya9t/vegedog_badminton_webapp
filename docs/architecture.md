@@ -594,6 +594,7 @@ Next.js API routes are serverless functions that run on Vercel (not in the brows
 |-------|--------|---------|
 | `/api/notify-followers` | POST | Sends email to followers when a new session is created. Uses `SUPABASE_SERVICE_ROLE_KEY` to read `auth.users` emails (not accessible from browser) |
 | `/api/notify-match-confirmation` | POST | Emails the registered opponents/teammate of a 对战 (match) to confirm a result. Opt-in: the recorder must tick "发送邮件通知参与方" (default off) on the match page; only then does the client call this route. See `docs/versus-design.md` |
+| `/api/notify-match-published` | POST | Emails all registered participants when the final confirmation publishes a match. Fired by the confirming client when `confirm_match` returns `status='published'`. Gated by `ENABLE_EMAIL`. |
 | `/api/send-court-email` | POST | Sends the session roster to the court's email address |
 | `/api/ping` | GET | Lightweight DB query to keep the free-tier Supabase project from pausing due to inactivity (called by Vercel cron daily) |
 
@@ -634,7 +635,8 @@ src/
 │   │
 │   └── api/
 │       ├── notify-followers/route.ts  # Sends follower email notifications
-│       ├── notify-match-confirmation/route.ts # Emails match participants to confirm a result
+│       ├── notify-match-confirmation/route.ts # Emails match participants to confirm a result (recorder opt-in)
+│       ├── notify-match-published/route.ts # Emails all participants when a match is published
 │       ├── send-court-email/route.ts  # Sends roster to court
 │       └── ping/route.ts             # DB keep-alive for free-tier Supabase
 │

@@ -109,6 +109,18 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
     }
   }
 
+  async function confirmMatch() {
+    const res = await rpc('confirm_match', { p_match_id: match.id }, 'confirm')
+    // The last confirmation publishes the match → notify all participants.
+    if (res && (res as { status?: string }).status === 'published') {
+      fetch('/api/notify-match-published', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId: match.id }),
+      }).catch(() => {})
+    }
+  }
+
   async function setPrivacy(next: boolean) {
     if (next === match.is_public) return
     if (match.status === 'pending' &&
@@ -310,7 +322,7 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
       )}
 
       {myPendingConfirm && (
-        <button type="button" onClick={() => rpc('confirm_match', { p_match_id: match.id }, 'confirm')}
+        <button type="button" onClick={confirmMatch}
           disabled={busy === 'confirm'}
           className="w-full py-3 rounded-xl bg-green-600 text-white text-sm font-semibold active:bg-green-700 disabled:opacity-50">
           {busy === 'confirm' ? '确认中…' : '确认这场对局结果'}

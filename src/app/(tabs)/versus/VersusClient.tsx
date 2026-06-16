@@ -74,7 +74,7 @@ function MatchCard({ match, currentUserId, onConfirm, busy }: {
   )
 
   return (
-    <div role="button" tabIndex={0}
+    <div role="button" tabIndex={0} data-match-id={match.id}
       onClick={() => router.push(`/versus/${match.id}`)}
       onKeyDown={e => { if (e.key === 'Enter') router.push(`/versus/${match.id}`) }}
       className="card space-y-2 cursor-pointer transition-colors hover:bg-gray-50 active:bg-gray-100">
@@ -153,9 +153,17 @@ export default function VersusClient({ currentUserId, initialMatches }: {
   async function confirm(matchId: string) {
     setConfirming(matchId)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.rpc as any)('confirm_match', { p_match_id: matchId })
+    const { data, error } = await (supabase.rpc as any)('confirm_match', { p_match_id: matchId })
     setConfirming(null)
     if (error) { alert(error.message); return }
+    // The last confirmation publishes the match → notify all participants.
+    if (data?.status === 'published') {
+      fetch('/api/notify-match-published', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId }),
+      }).catch(() => {})
+    }
     refresh()
   }
 

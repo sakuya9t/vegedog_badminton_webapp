@@ -67,16 +67,23 @@ test.describe('Versus — match lifecycle', () => {
     const recCtx  = await browser.newContext({ storageState: authAs(1) })
     const recPage = await recCtx.newPage()
     const matchUrl = await createSinglesMatch(recPage, U2)
+    const matchId  = matchUrl.split('/').pop() as string
     await enterScore(recPage, 21, 18)
     await recPage.locator('button', { hasText: '发送确认请求' }).click()
     await expect(recPage.getByText('等待对方确认')).toBeVisible({ timeout: 8_000 })
 
-    // ── Opponent (user2) confirms from the 待你确认 list ─────────────────────
+    // ── Opponent (user2) confirms this specific match from the 待你确认 list ──
+    // (Scope to this match's card; prior test runs may leave other pending items.)
     const oppCtx  = await browser.newContext({ storageState: authAs(2) })
     const oppPage = await oppCtx.newPage()
     await oppPage.goto('/versus')
-    await expect(oppPage.getByText('待你确认')).toBeVisible({ timeout: 8_000 })
-    await oppPage.locator('button', { hasText: '确认对局' }).first().click()
+    const card = oppPage.locator(`[data-match-id="${matchId}"]`)
+    await expect(card.locator('button', { hasText: '确认对局' })).toBeVisible({ timeout: 8_000 })
+    await card.locator('button', { hasText: '确认对局' }).click()
+    // Wait for the confirmation to commit (the button leaves this card) before
+    // tearing down the context — closing mid-RPC can abort the request.
+    await expect(oppPage.locator(`[data-match-id="${matchId}"] button:has-text("确认对局")`))
+      .toHaveCount(0, { timeout: 8_000 })
     await oppCtx.close()
 
     // ── Recorder sees it published (all confirmed) ───────────────────────────
