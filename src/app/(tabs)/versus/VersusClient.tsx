@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatSessionDate } from '@/lib/dates'
 import {
@@ -21,6 +21,17 @@ const MATCH_SELECT = `
 
 type SubTab = 'matches' | 'history' | 'cup'
 
+function PlayerName({ p }: { p: MatchParticipantWithProfile }) {
+  // Registered players link to their profile; guests (no user_id) are plain text.
+  if (!p.user_id) return <>{p.display_name}</>
+  return (
+    <Link href={`/players/${p.user_id}`} onClick={e => e.stopPropagation()}
+      className="hover:underline">
+      {p.display_name}
+    </Link>
+  )
+}
+
 function TeamRow({ players, score, winner }: {
   players: MatchParticipantWithProfile[]
   score: number
@@ -29,7 +40,9 @@ function TeamRow({ players, score, winner }: {
   return (
     <div className={`flex items-center justify-between gap-2 ${winner ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
       <span className="text-sm truncate">
-        {players.map(p => p.display_name).join(' & ') || '—'}
+        {players.length === 0 ? '—' : players.map((p, i) => (
+          <span key={p.id}>{i > 0 && ' & '}<PlayerName p={p} /></span>
+        ))}
       </span>
       <span className="text-sm tabular-nums shrink-0">{score}</span>
     </div>
@@ -111,7 +124,10 @@ export default function VersusClient({ currentUserId, initialMatches }: {
   initialMatches: MatchWithDetails[]
 }) {
   const supabase = createClient()
-  const [tab, setTab] = useState<SubTab>('matches')
+  const searchParams = useSearchParams()
+  const initialTab: SubTab =
+    (['matches', 'history', 'cup'] as const).find(t => t === searchParams.get('tab')) ?? 'matches'
+  const [tab, setTab] = useState<SubTab>(initialTab)
   const [matches, setMatches] = useState<MatchWithDetails[]>(initialMatches)
   const [confirming, setConfirming] = useState<string | null>(null)
 

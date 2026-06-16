@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatSessionDate } from '@/lib/dates'
@@ -1155,13 +1156,15 @@ function ParticipantRow({
         {rank}
       </span>
 
-      {/* Avatar */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={(p as any).profile?.avatar_url ?? `https://api.dicebear.com/9.x/thumbs/svg?seed=${p.user_id}`}
-        alt=""
-        className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
-      />
+      {/* Avatar — links to the participant's player profile */}
+      <Link href={`/players/${p.user_id}`} className="shrink-0">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={(p as any).profile?.avatar_url ?? `https://api.dicebear.com/9.x/thumbs/svg?seed=${p.user_id}`}
+          alt=""
+          className="w-8 h-8 rounded-full object-cover bg-gray-100"
+        />
+      </Link>
 
       {/* Name — editable for own entries */}
       <div className="flex-1 min-w-0">

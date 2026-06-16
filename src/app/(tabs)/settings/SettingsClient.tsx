@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { matchWinner } from '@/lib/match'
 import type { Profile } from '@/lib/types'
 import dynamic from 'next/dynamic'
 
@@ -347,6 +349,7 @@ function StatsTab() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [stats,   setStats]   = useState({ joined: 0, plusOne: 0, waitlisted: 0, initiated: 0, stayedLate: 0 })
+  const [versus,  setVersus]  = useState({ played: 0, wins: 0, losses: 0 })
   const [participatedDates, setParticipatedDates] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -358,6 +361,7 @@ function StatsTab() {
         { data: activeRows },
         { count: waitlisted },
         { count: initiated },
+        { data: myMatchRows },
       ] = await Promise.all([
         supabase.from('participants')
           .select('session_id, stayed_late, sessions(starts_at)')
@@ -367,6 +371,7 @@ function StatsTab() {
           .eq('user_id', user.id).eq('status', 'waitlist'),
         supabase.from('sessions').select('*', { count: 'exact', head: true })
           .eq('initiator_id', user.id),
+        supabase.from('match_participants').select('match_id').eq('user_id', user.id),
       ])
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -388,6 +393,26 @@ function StatsTab() {
         stayedLate: stayedLateSessions.size,
       })
       setParticipatedDates(dates)
+
+      // 对战情况: published matches I took part in, with win/loss from my team.
+      const matchIds = [...new Set((myMatchRows ?? []).map(r => r.match_id))]
+      if (matchIds.length > 0) {
+        const { data: matches } = await supabase
+          .from('matches')
+          .select('id, participants:match_participants(user_id, team), games:match_games(team1_score, team2_score)')
+          .in('id', matchIds)
+          .eq('status', 'published')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ms = (matches ?? []) as any[]
+        let wins = 0, losses = 0
+        for (const m of ms) {
+          const mine = (m.participants ?? []).find((p: any) => p.user_id === user.id) // eslint-disable-line @typescript-eslint/no-explicit-any
+          const w = matchWinner(m.games ?? [])
+          if (!mine || w === 0) continue
+          if (w === mine.team) wins++; else losses++
+        }
+        setVersus({ played: ms.length, wins, losses })
+      }
       setLoading(false)
     }
     load()
@@ -446,6 +471,30 @@ function StatsTab() {
           ))}
         </div>
       </div>
+
+      <Link href="/versus?tab=history"
+        className="card block transition-colors hover:bg-gray-50 active:bg-gray-100">
+        <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide mb-3 flex items-center justify-between">
+          对战情况
+          <span className="text-xs font-normal normal-case text-gray-300">对战历史 ›</span>
+        </h2>
+        <div className="grid grid-cols-4 gap-2 text-center">
+          {[
+            { label: '对战场次', value: versus.played },
+            { label: '胜',       value: versus.wins },
+            { label: '负',       value: versus.losses },
+            { label: '胜率',     value: versus.wins + versus.losses === 0
+                                          ? '—'
+                                          : `${Math.round((versus.wins / (versus.wins + versus.losses)) * 100)}%` },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-gray-50 rounded-xl px-2 py-2">
+              <p className="text-xl font-bold text-gray-900 leading-tight tabular-nums">{value}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-gray-400 mt-2">仅统计已发布（全员确认）的对局</p>
+      </Link>
 
       <div className="card">
         <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide mb-3">参与记录</h2>
