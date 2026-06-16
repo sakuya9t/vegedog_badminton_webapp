@@ -30,6 +30,7 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
   const [busy, setBusy]   = useState<string | null>(null)
   const [error, setError] = useState('')
   const [replacing, setReplacing] = useState<string | null>(null)
+  const [notifyEmail, setNotifyEmail] = useState(false)
 
   const isRecorder = match.recorder_id === currentUserId
   const editable   = isRecorder && (match.status === 'draft' || match.status === 'pending')
@@ -98,11 +99,14 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
     await saveGames()
     const res = await rpc('request_match_confirmation', { p_match_id: match.id }, 'request')
     if (res === null) return
-    fetch('/api/notify-match-confirmation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matchId: match.id }),
-    }).catch(() => {})
+    // Only email the participants if the recorder opted in.
+    if (notifyEmail) {
+      fetch('/api/notify-match-confirmation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId: match.id }),
+      }).catch(() => {})
+    }
   }
 
   async function setPrivacy(next: boolean) {
@@ -264,6 +268,20 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
       )}
 
       {error && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-3">{error}</p>}
+
+      {/* Email opt-in — applies to (re)sending the confirmation request. */}
+      {isRecorder && (match.status === 'draft' || match.status === 'pending') && (
+        <label className="card flex items-center justify-between cursor-pointer select-none">
+          <span>
+            <span className="text-sm font-medium text-gray-700">发送邮件通知参与方</span>
+            <span className="block text-xs text-gray-400 mt-0.5">
+              默认不发送；勾选后向待确认的注册参与方发送邮件提醒。
+            </span>
+          </span>
+          <input type="checkbox" checked={notifyEmail} onChange={e => setNotifyEmail(e.target.checked)}
+            className="w-4 h-4 rounded accent-brand-600 shrink-0" />
+        </label>
+      )}
 
       {/* Actions */}
       {isRecorder && match.status === 'draft' && (

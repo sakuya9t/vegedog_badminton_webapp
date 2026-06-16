@@ -593,7 +593,7 @@ Next.js API routes are serverless functions that run on Vercel (not in the brows
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/api/notify-followers` | POST | Sends email to followers when a new session is created. Uses `SUPABASE_SERVICE_ROLE_KEY` to read `auth.users` emails (not accessible from browser) |
-| `/api/notify-match-confirmation` | POST | Emails the registered opponents/teammate of a 对战 (match) when the recorder requests confirmation. See `docs/versus-design.md` |
+| `/api/notify-match-confirmation` | POST | Emails the registered opponents/teammate of a 对战 (match) to confirm a result. Opt-in: the recorder must tick "发送邮件通知参与方" (default off) on the match page; only then does the client call this route. See `docs/versus-design.md` |
 | `/api/send-court-email` | POST | Sends the session roster to the court's email address |
 | `/api/ping` | GET | Lightweight DB query to keep the free-tier Supabase project from pausing due to inactivity (called by Vercel cron daily) |
 
@@ -623,8 +623,11 @@ src/
 │   │   └── new/page.tsx               # Client component: create session form
 │   │
 │   ├── versus/
-│   │   ├── [id]/                      # Match detail: score entry, confirm flow, realtime
+│   │   ├── [id]/                      # Match detail: score entry, confirm flow, visibility toggle, realtime
 │   │   └── new/page.tsx               # Create-match form (singles/doubles, member pickers)
+│   │
+│   ├── players/
+│   │   └── [id]/page.tsx              # Player profile: public published matches + win/loss record
 │   │
 │   ├── login/page.tsx                 # Client component: Google/magic link/password login
 │   ├── auth/callback/route.ts         # OAuth redirect handler (exchanges code for session)
