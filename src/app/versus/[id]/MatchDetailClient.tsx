@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatSessionDate } from '@/lib/dates'
@@ -104,6 +105,13 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
     }).catch(() => {})
   }
 
+  async function setPrivacy(next: boolean) {
+    if (next === match.is_public) return
+    if (match.status === 'pending' &&
+        !confirm('更改公开性会重置所有人的确认，需要大家重新确认。确定继续？')) return
+    await rpc('set_match_privacy', { p_match_id: match.id, p_is_public: next }, 'privacy')
+  }
+
   async function cancel() {
     if (!confirm('确定取消这场对局？此操作不可撤销。')) return
     const r = await rpc('cancel_match', { p_match_id: match.id }, 'cancel')
@@ -118,7 +126,9 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
           src={p.profile?.avatar_url ?? `https://api.dicebear.com/9.x/thumbs/svg?seed=${p.user_id ?? p.display_name}`}
           alt="" className="w-7 h-7 rounded-full bg-gray-100 shrink-0 object-cover" />
         <span className="text-sm text-gray-800 flex-1 truncate">
-          {p.display_name}
+          {p.user_id
+            ? <Link href={`/players/${p.user_id}`} className="hover:underline">{p.display_name}</Link>
+            : p.display_name}
           {p.user_id === currentUserId && <span className="text-xs text-gray-400 ml-1">(你)</span>}
           {p.is_guest && <span className="ml-1.5 text-xs text-amber-600 bg-amber-50 rounded px-1.5 py-0.5">访客</span>}
         </span>
@@ -220,6 +230,37 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
             ))}
           </div>
         )
+      )}
+
+      {/* Visibility (recorder, editable). Locked once published. */}
+      {editable && (
+        <div className="card space-y-3">
+          <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide">公开性</h2>
+          <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+            {([true, false] as const).map(v => (
+              <button key={String(v)} type="button" disabled={busy === 'privacy'}
+                onClick={() => setPrivacy(v)}
+                className={`flex-1 text-sm font-medium py-2 rounded-lg transition-colors disabled:opacity-50
+                  ${match.is_public === v ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500'}`}>
+                {v ? '公开' : '不公开'}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400">
+            {match.is_public ? '所有登录用户都能在对战历史看到。' : '仅参与方可在对战历史看到。'}
+            无论是否公开，本场对局都会计入菜狗杯 ELO 积分。
+          </p>
+          {match.status === 'pending' && (
+            <p className="text-xs text-amber-600">注意：更改公开性会重置所有人的确认。</p>
+          )}
+        </div>
+      )}
+
+      {/* Visibility (locked once published). */}
+      {match.status === 'published' && (
+        <p className="text-xs text-gray-400 text-center">
+          {match.is_public ? '此对局已公开' : '此对局不公开'}，发布后公开性已锁定。
+        </p>
       )}
 
       {error && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-3">{error}</p>}

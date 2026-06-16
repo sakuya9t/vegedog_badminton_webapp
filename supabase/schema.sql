@@ -797,15 +797,36 @@ end;
 $$;
 
 -- ── RPC: set_match_privacy ──────────────────────────────────────────────────
+-- Recorder toggles public/private. Allowed only while editable (draft/pending);
+-- a published match's visibility is locked. In pending, changing visibility is a
+-- material change to what participants agreed to, so it invalidates all
+-- registered confirmations — everyone must re-confirm (same rule as a score edit).
 create or replace function public.set_match_privacy(
   p_match_id  uuid,
   p_is_public boolean
 )
 returns void language plpgsql security definer as $$
+declare
+  v_match public.matches;
 begin
-  update public.matches set is_public = p_is_public
-   where id = p_match_id and recorder_id = auth.uid();
-  if not found then raise exception 'Not your match'; end if;
+  select * into v_match from public.matches where id = p_match_id;
+  if not found then raise exception 'Match not found'; end if;
+  if v_match.recorder_id != auth.uid() then raise exception 'Not your match'; end if;
+  if v_match.status not in ('draft', 'pending') then
+    raise exception 'Cannot change visibility of a % match', v_match.status;
+  end if;
+
+  -- No-op if unchanged, so we don't needlessly reset confirmations.
+  if v_match.is_public is not distinct from p_is_public then return; end if;
+
+  update public.matches set is_public = p_is_public where id = p_match_id;
+
+  -- Visibility changed → everyone must re-confirm.
+  if v_match.status = 'pending' then
+    update public.match_participants
+       set confirmed = false, confirmed_at = null
+     where match_id = p_match_id and not is_recorder and not is_guest;
+  end if;
 end;
 $$;
 
