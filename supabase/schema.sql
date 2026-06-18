@@ -12,6 +12,11 @@ create table public.profiles (
   avatar_url     text,
   venmo_username text,
   is_admin       boolean not null default false,
+  -- email notification preferences (all opt-out, default on)
+  notify_follow          boolean not null default true,  -- 关注的人发起新接龙
+  notify_promoted        boolean not null default true,  -- 从候补递补为正式成员（接龙）
+  notify_match_recorded  boolean not null default true,  -- 有人录入对局待你确认
+  notify_match_published boolean not null default true,  -- 对局已发布
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );

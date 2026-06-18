@@ -14,6 +14,87 @@ export type ChangelogEntry = { version: string; date: string; notes: string[] }
 
 type Tab = '账户' | '统计' | '关注' | '关于'
 
+// ── Email notification preferences ──────────────────────────────────────────
+type NotifyKey = 'notify_follow' | 'notify_promoted' | 'notify_match_recorded' | 'notify_match_published'
+
+const NOTIFY_OPTIONS: { key: NotifyKey; label: string; hint: string }[] = [
+  { key: 'notify_follow',          label: '关注的人发起新接龙', hint: '你关注的人开启新接龙时提醒你' },
+  { key: 'notify_promoted',        label: '候补递补成功',       hint: '你从候补递补为正式成员时提醒你' },
+  { key: 'notify_match_recorded',  label: '对局待确认',         hint: '有人录入了你参与的对局，等你确认' },
+  { key: 'notify_match_published', label: '对局发布',           hint: '你参与的对局全员确认并发布时提醒你' },
+]
+
+function NotificationPrefsCard() {
+  const supabase = createClient()
+  const [loading, setLoading] = useState(true)
+  const [prefs, setPrefs] = useState<Record<NotifyKey, boolean>>({
+    notify_follow: true, notify_promoted: true, notify_match_recorded: true, notify_match_published: true,
+  })
+
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('notify_follow, notify_promoted, notify_match_recorded, notify_match_published')
+        .eq('id', user.id).single() as { data: Record<NotifyKey, boolean> | null }
+      if (profile) {
+        setPrefs({
+          notify_follow:          profile.notify_follow          ?? true,
+          notify_promoted:        profile.notify_promoted        ?? true,
+          notify_match_recorded:  profile.notify_match_recorded  ?? true,
+          notify_match_published: profile.notify_match_published ?? true,
+        })
+      }
+      setLoading(false)
+    }
+    load()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function toggle(key: NotifyKey) {
+    const next = !prefs[key]
+    setPrefs(prev => ({ ...prev, [key]: next })) // optimistic
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('profiles') as any)
+      .update({ [key]: next, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+    if (error) setPrefs(prev => ({ ...prev, [key]: !next })) // revert on failure
+  }
+
+  if (loading) return <div className="card animate-pulse h-32" />
+
+  return (
+    <div className="card space-y-1">
+      <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide mb-2">邮件通知</h2>
+      {NOTIFY_OPTIONS.map(({ key, label, hint }, i) => (
+        <div key={key}>
+          {i > 0 && <hr className="border-gray-100" />}
+          <div className="flex items-center justify-between gap-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-sm text-gray-800">{label}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{hint}</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={prefs[key]}
+              aria-label={label}
+              onClick={() => toggle(key)}
+              className={`relative shrink-0 w-11 h-6 rounded-full transition-colors
+                ${prefs[key] ? 'bg-brand-500' : 'bg-gray-200'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform
+                ${prefs[key] ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Account tab ────────────────────────────────────────────────────────────
 function AccountTab({ onSignOut, setup }: { onSignOut: () => void; setup?: boolean }) {
   const supabase = createClient()
@@ -308,6 +389,8 @@ function AccountTab({ onSignOut, setup }: { onSignOut: () => void; setup?: boole
 
         {error && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-3">{error}</p>}
       </div>
+
+      {!setup && <NotificationPrefsCard />}
 
       <div className="card">
         <button onClick={() => setConfirmSignOut(true)}

@@ -32,7 +32,17 @@ export async function POST(req: NextRequest) {
   const games        = (match.games ?? []) as unknown as MatchGame[]
 
   // Recipients: registered, non-recorder participants who still need to confirm.
-  const recipients = participants.filter(p => !p.is_recorder && !p.is_guest && !p.confirmed && p.user_id)
+  let recipients = participants.filter(p => !p.is_recorder && !p.is_guest && !p.confirmed && p.user_id)
+  if (recipients.length === 0) return NextResponse.json({ ok: true, sent: 0 })
+
+  // Drop anyone who has opted out of match-recorded notifications.
+  const { data: optedIn } = await supabase
+    .from('profiles')
+    .select('id')
+    .in('id', recipients.map(p => p.user_id as string))
+    .eq('notify_match_recorded', true)
+  const allowedIds = new Set((optedIn ?? []).map(p => p.id))
+  recipients = recipients.filter(p => allowedIds.has(p.user_id as string))
   if (recipients.length === 0) return NextResponse.json({ ok: true, sent: 0 })
 
   const gmailUser = process.env.GMAIL_USER

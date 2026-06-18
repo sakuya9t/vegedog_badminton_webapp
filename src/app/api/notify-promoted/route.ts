@@ -26,6 +26,16 @@ export async function POST(req: NextRequest) {
 
   if (!participant) return NextResponse.json({ ok: true, skipped: true })
 
+  // Respect the recipient's opt-out preference.
+  const { data: pref } = await supabase
+    .from('profiles')
+    .select('notify_promoted')
+    .eq('id', promotedUserId)
+    .single()
+  if (pref && pref.notify_promoted === false) {
+    return NextResponse.json({ ok: true, skipped: 'opted_out' })
+  }
+
   const { data: session } = await supabase
     .from('sessions')
     .select('title, starts_at, location')

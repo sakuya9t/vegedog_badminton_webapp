@@ -289,7 +289,9 @@ Records are **immutable in identity** — once created, the participant associat
 ---
 
 ### `follows`
-Tracks who follows whom. When user A follows user B, and B creates a new session, A gets an email notification.
+Tracks who follows whom. When user A follows user B, and B creates a new session, A gets an email notification — unless A has turned it off (see below).
+
+**Email notification preferences.** Each `profiles` row carries four opt-out flags (all `boolean not null default true`): `notify_follow` (关注的人发起新接龙), `notify_promoted` (候补递补成功), `notify_match_recorded` (对局待确认), `notify_match_published` (对局发布). Users toggle these on the 设置 → 账户 page. The corresponding `/api/notify-*` routes filter recipients by the matching flag before sending, so opting out suppresses that email. New columns ship in `supabase/migrations_notify_prefs.sql`.
 
 | Column | Type | Notes |
 |--------|------|-------|

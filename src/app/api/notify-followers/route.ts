@@ -32,11 +32,20 @@ export async function POST(req: NextRequest) {
   const gmailPass = process.env.GMAIL_APP_PASSWORD
   if (!gmailUser || !gmailPass) return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
 
+  // Keep only followers who haven't opted out of new-session notifications.
+  const followerIds = follows.map(f => f.follower_id)
+  const { data: optedIn } = await supabase
+    .from('profiles')
+    .select('id')
+    .in('id', followerIds)
+    .eq('notify_follow', true)
+  const recipientIds = (optedIn ?? []).map(p => p.id)
+  if (recipientIds.length === 0) return NextResponse.json({ ok: true, sent: 0 })
+
   // Use admin client to get follower emails from auth.users
   const admin = createAdminClient()
-  const followerIds = follows.map(f => f.follower_id)
   const emails: string[] = []
-  for (const uid of followerIds) {
+  for (const uid of recipientIds) {
     const { data } = await admin.auth.admin.getUserById(uid)
     if (data.user?.email) emails.push(data.user.email)
   }

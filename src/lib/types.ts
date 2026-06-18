@@ -26,6 +26,11 @@ export interface Profile {
   avatar_url:     string | null
   venmo_username: string | null
   is_admin:       boolean
+  // email notification preferences (all opt-out, default on)
+  notify_follow:          boolean
+  notify_promoted:        boolean
+  notify_match_recorded:  boolean
+  notify_match_published: boolean
   created_at:     string
   updated_at:     string
 }
