@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import SessionCard from '@/components/SessionCard'
+import SessionsClient from './SessionsClient'
 import type { SessionWithInitiator } from '@/lib/types'
 
 export const revalidate = 0
@@ -8,14 +8,26 @@ export const revalidate = 0
 async function getSessions() {
   const supabase = await createClient()
 
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select(`*, initiator:profiles!initiator_id(id, nickname, avatar_url)`)
-    .neq('status', 'canceled')
-    .neq('status', 'closed')
-    .order('starts_at', { ascending: true })
+  // Active (进行中) and history (已结束) in parallel.
+  const [{ data: activeRows }, { data: historyRows }] = await Promise.all([
+    supabase
+      .from('sessions')
+      .select(`*, initiator:profiles!initiator_id(id, nickname, avatar_url)`)
+      .neq('status', 'canceled')
+      .neq('status', 'closed')
+      .order('starts_at', { ascending: true }),
+    supabase
+      .from('sessions')
+      .select(`*, initiator:profiles!initiator_id(id, nickname, avatar_url)`)
+      .eq('status', 'closed')
+      .order('starts_at', { ascending: false })
+      .limit(30),
+  ])
 
-  const ids = (sessions ?? []).map((s: { id: string }) => s.id)
+  const active  = (activeRows  ?? []) as unknown as SessionWithInitiator[]
+  const history = (historyRows ?? []) as unknown as SessionWithInitiator[]
+
+  const ids = [...active, ...history].map(s => s.id)
   const { data: counts } = ids.length
     ? await supabase
         .from('participants')
@@ -29,11 +41,11 @@ async function getSessions() {
     joinedBySession[row.session_id] = (joinedBySession[row.session_id] ?? 0) + 1
   }
 
-  return { sessions: (sessions ?? []) as unknown as SessionWithInitiator[], joinedBySession }
+  return { active, history, joinedBySession }
 }
 
 export default async function SessionsPage() {
-  const { sessions, joinedBySession } = await getSessions()
+  const { active, history, joinedBySession } = await getSessions()
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-6 space-y-4">
@@ -49,19 +61,7 @@ export default async function SessionsPage() {
       <img src="/dog_chase.png" alt="" aria-hidden="true"
         className="fixed bottom-20 right-2 w-80 h-80 object-contain pointer-events-none opacity-30 z-0" />
 
-      {sessions.length === 0 ? (
-        <div className="card text-center py-12 text-gray-400">
-          <p className="text-3xl mb-2">🏸</p>
-          <p className="text-sm">暂无进行中的接龙</p>
-          <p className="text-xs mt-1">快来发起一场吧！</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {sessions.map(s => (
-            <SessionCard key={s.id} session={s} joinedCount={joinedBySession[s.id] ?? 0} />
-          ))}
-        </div>
-      )}
+      <SessionsClient active={active} history={history} joinedBySession={joinedBySession} />
     </main>
   )
 }

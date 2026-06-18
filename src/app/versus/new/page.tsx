@@ -138,7 +138,7 @@ export default function NewMatchPage() {
               关闭后仅参与方可在对战历史看到
             </span>
             <span className="block text-xs text-gray-400 mt-0.5">
-              无论是否公开，本场对局都会计入菜狗杯 ELO 积分。
+              无论是否公开，本场对局都会计入对战 ELO 积分。
             </span>
           </span>
           <input type="checkbox" checked={isPublic} onChange={e => setIsPublic(e.target.checked)}

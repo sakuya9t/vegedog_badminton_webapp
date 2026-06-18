@@ -171,8 +171,8 @@ test.describe('Session lifecycle', () => {
     // Confirm dialog appears — wait for it then click 确定
     await expect(page.getByText('接龙将进入只读状态')).toBeVisible({ timeout: 5_000 })
     await page.locator('button', { hasText: '确定' }).click()
-    // After closing, app navigates to /history
-    await page.waitForURL('**/history', { timeout: 8_000 })
+    // After closing, app navigates to the 接龙 tab's 历史 sub-view.
+    await page.waitForURL('**/sessions?tab=history', { timeout: 8_000 })
     await expect(page.locator('text=E2E 测试场次').first()).toBeVisible()
   })
 })

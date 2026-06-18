@@ -6,8 +6,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function POST(req: NextRequest) {
-  if (process.env.ENABLE_EMAIL !== 'true') return NextResponse.json({ ok: true, skipped: true })
-
   const { sessionId, promotedUserId } = await req.json()
   if (!sessionId || !promotedUserId) {
     return NextResponse.json({ error: 'Missing params' }, { status: 400 })
@@ -26,16 +24,6 @@ export async function POST(req: NextRequest) {
 
   if (!participant) return NextResponse.json({ ok: true, skipped: true })
 
-  // Respect the recipient's opt-out preference.
-  const { data: pref } = await supabase
-    .from('profiles')
-    .select('notify_promoted')
-    .eq('id', promotedUserId)
-    .single()
-  if (pref && pref.notify_promoted === false) {
-    return NextResponse.json({ ok: true, skipped: 'opted_out' })
-  }
-
   const { data: session } = await supabase
     .from('sessions')
     .select('title, starts_at, location')
@@ -43,13 +31,35 @@ export async function POST(req: NextRequest) {
     .single()
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
+  const admin = createAdminClient()
+
+  // In-app station letter (always, regardless of email opt-out).
+  await admin.from('notifications').insert({
+    user_id: promotedUserId,
+    type: 'waitlist_promoted',
+    title: '你已递补为正式成员',
+    body: `「${session.title}」候补递补成功`,
+    link: `/sessions/${sessionId}`,
+  })
+
+  // Email, gated by the recipient's opt-out preference and the global switch.
+  if (process.env.ENABLE_EMAIL !== 'true') return NextResponse.json({ ok: true, notified: true })
+
+  const { data: pref } = await supabase
+    .from('profiles')
+    .select('notify_promoted')
+    .eq('id', promotedUserId)
+    .single()
+  if (pref && pref.notify_promoted === false) {
+    return NextResponse.json({ ok: true, notified: true, emailSkipped: 'opted_out' })
+  }
+
   const gmailUser = process.env.GMAIL_USER
   const gmailPass = process.env.GMAIL_APP_PASSWORD
-  if (!gmailUser || !gmailPass) return NextResponse.json({ error: 'Email not configured' }, { status: 500 })
+  if (!gmailUser || !gmailPass) return NextResponse.json({ ok: true, notified: true, emailSkipped: 'not configured' })
 
-  const admin = createAdminClient()
   const { data: { user } } = await admin.auth.admin.getUserById(promotedUserId)
-  if (!user?.email) return NextResponse.json({ ok: true, skipped: true })
+  if (!user?.email) return NextResponse.json({ ok: true, notified: true, emailSkipped: 'no email' })
 
   const sessionUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://vegedog-badminton-webapp.vercel.app'}/sessions/${sessionId}`
 

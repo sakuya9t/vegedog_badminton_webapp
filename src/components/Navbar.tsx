@@ -23,7 +23,7 @@ export default async function Navbar() {
           </svg>
           <span>菜狗主页</span>
         </Link>
-        <NavbarActions loggedIn={!!user} avatarSrc={avatarSrc} />
+        <NavbarActions loggedIn={!!user} avatarSrc={avatarSrc} userId={user?.id ?? null} />
       </div>
     </header>
   )

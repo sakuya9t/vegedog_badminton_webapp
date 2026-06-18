@@ -22,7 +22,7 @@ function groupByMonth(sessions: SessionWithInitiator[]): MonthGroup[] {
   return Array.from(map.values())
 }
 
-export default function HistoryClient({
+export default function SessionHistoryList({
   sessions,
   joinedBySession,
 }: {
@@ -30,7 +30,8 @@ export default function HistoryClient({
   joinedBySession: Record<string, number>
 }) {
   const groups = groupByMonth(sessions)
-  const [openKeys, setOpenKeys] = useState<Set<string>>(() => new Set())
+  // Most recent month starts expanded so the latest sessions are visible.
+  const [openKeys, setOpenKeys] = useState<Set<string>>(() => new Set(groups.length ? [groups[0].key] : []))
 
   function toggle(key: string) {
     setOpenKeys(prev => {

@@ -115,6 +115,24 @@ export default async function PlayerProfilePage({ params }: { params: Promise<{ 
     if (w === mine.team) wins++; else losses++
   }
 
+  // 对战 ELO: the player's rating, rank, and most recent change.
+  const { data: rating } = await supabase
+    .from('player_ratings')
+    .select('rating, games_played, peak_rating')
+    .eq('user_id', id)
+    .maybeSingle()
+  let rank: number | null = null
+  let recentDelta: number | null = null
+  if (rating) {
+    const [{ count }, { data: lastChange }] = await Promise.all([
+      supabase.from('player_ratings').select('*', { count: 'exact', head: true }).gt('rating', rating.rating),
+      supabase.from('rating_history').select('delta').eq('user_id', id)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    rank = (count ?? 0) + 1
+    recentDelta = lastChange?.delta ?? null
+  }
+
   const isSelf = user?.id === profile.id
 
   return (
@@ -140,15 +158,34 @@ export default async function PlayerProfilePage({ params }: { params: Promise<{ 
           </div>
         </div>
 
-        {/* Ranking score — Phase 2 placeholder */}
+        {/* 对战 ELO ranking score */}
         <div className="card flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-gray-500">排位分数</p>
-            <p className="text-xs text-gray-400 mt-0.5">菜狗杯 ELO 积分</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {rating
+                ? <>对战 ELO · {rating.games_played} 局{rank ? ` · 第 ${rank} 名` : ''}</>
+                : '对战 ELO 积分'}
+            </p>
           </div>
-          <span className="text-xs font-medium text-gray-400 bg-gray-100 rounded-full px-3 py-1">
-            即将上线
-          </span>
+          {rating ? (
+            <div className="text-right">
+              <p className="text-xl font-bold text-gray-900 tabular-nums leading-none">
+                {Math.round(rating.rating)}
+              </p>
+              {recentDelta != null && (
+                <p className={`text-[11px] tabular-nums mt-0.5 ${
+                  recentDelta > 0 ? 'text-green-600' : recentDelta < 0 ? 'text-red-500' : 'text-gray-400'
+                }`}>
+                  {recentDelta > 0 ? '▲' : recentDelta < 0 ? '▼' : ''}{Math.abs(Math.round(recentDelta))}
+                </p>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs font-medium text-gray-400 bg-gray-100 rounded-full px-3 py-1">
+              暂无积分
+            </span>
+          )}
         </div>
 
         {/* Public published matches */}

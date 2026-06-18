@@ -340,7 +340,7 @@ export default function SessionDetailClient({
       .eq('id', session.id)
     setClosing(false)
     if (error) showToast(error.message, false)
-    else router.push('/history')
+    else router.push('/sessions?tab=history')
   }
 
   // ── Send court email ─────────────────────────────────────────────────

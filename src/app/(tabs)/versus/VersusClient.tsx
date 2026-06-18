@@ -9,6 +9,7 @@ import {
   gamesWon, matchWinner, scoreLine, teamPlayers, confirmProgress,
 } from '@/lib/match'
 import type { MatchWithDetails, MatchParticipantWithProfile } from '@/lib/types'
+import Leaderboard from './Leaderboard'
 
 const MATCH_SELECT = `
   *,
@@ -19,7 +20,7 @@ const MATCH_SELECT = `
   games:match_games(*)
 `
 
-type SubTab = 'matches' | 'history' | 'cup'
+type SubTab = 'matches' | 'history' | 'leaderboard'
 
 function PlayerName({ p }: { p: MatchParticipantWithProfile }) {
   // Registered players link to their profile; guests (no user_id) are plain text.
@@ -126,7 +127,7 @@ export default function VersusClient({ currentUserId, initialMatches }: {
   const supabase = createClient()
   const searchParams = useSearchParams()
   const initialTab: SubTab =
-    (['matches', 'history', 'cup'] as const).find(t => t === searchParams.get('tab')) ?? 'matches'
+    (['matches', 'history', 'leaderboard'] as const).find(t => t === searchParams.get('tab')) ?? 'matches'
   const [tab, setTab] = useState<SubTab>(initialTab)
   const [matches, setMatches] = useState<MatchWithDetails[]>(initialMatches)
   const [confirming, setConfirming] = useState<string | null>(null)
@@ -204,7 +205,7 @@ export default function VersusClient({ currentUserId, initialMatches }: {
 
       {/* Sub-tab switcher */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-        {([['matches', '对局'], ['history', '对战历史'], ['cup', '菜狗杯']] as [SubTab, string][]).map(
+        {([['matches', '对局'], ['history', '对战历史'], ['leaderboard', '排行榜']] as [SubTab, string][]).map(
           ([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
               className={`flex-1 text-sm font-medium py-1.5 rounded-lg transition-colors
@@ -260,16 +261,7 @@ export default function VersusClient({ currentUserId, initialMatches }: {
         </div>
       )}
 
-      {tab === 'cup' && (
-        <div className="card text-gray-400 space-y-2">
-          <p className="font-semibold text-gray-500 text-sm">菜狗杯 · 即将上线</p>
-          <ul className="text-sm space-y-1.5">
-            <li>📊 ELO 排名（低分易涨、高分难涨）</li>
-            <li>🏆 积分追踪（仅全员确认的对局计分）</li>
-            <li>🎯 tournament 分组助手</li>
-          </ul>
-        </div>
-      )}
+      {tab === 'leaderboard' && <Leaderboard currentUserId={currentUserId} />}
     </div>
   )
 }

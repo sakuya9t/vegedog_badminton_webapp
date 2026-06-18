@@ -10,6 +10,9 @@ export type Database = {
       participants:    { Row: Participant;    Insert: ParticipantInsert;       Update: Partial<Participant> }
       payment_methods: { Row: PaymentMethod; Insert: PaymentMethodInsert;     Update: Partial<PaymentMethod> }
       payment_records: { Row: PaymentRecord; Insert: PaymentRecordInsert;     Update: Partial<PaymentRecord> }
+      player_ratings:  { Row: PlayerRating;  Insert: Partial<PlayerRating>;    Update: Partial<PlayerRating> }
+      rating_history:  { Row: RatingHistory; Insert: Partial<RatingHistory>;   Update: Partial<RatingHistory> }
+      notifications:   { Row: Notification;  Insert: Partial<Notification>;    Update: Partial<Notification> }
     }
     Functions: {
       join_session:         { Args: { p_session_id: string; p_user_id: string; p_display_name: string }; Returns: Participant }
@@ -212,6 +215,46 @@ export interface MatchWithDetails extends Match {
   recorder:     Pick<Profile, 'id' | 'nickname' | 'avatar_url'>
   participants: MatchParticipantWithProfile[]
   games:        MatchGame[]
+}
+
+// ── 对战积分 (Ratings / 排行榜) types — Phase 2 ──────────────────────────────
+
+export interface PlayerRating {
+  user_id:      string
+  rating:       number
+  games_played: number
+  peak_rating:  number
+  updated_at:   string
+}
+
+export interface PlayerRatingWithProfile extends PlayerRating {
+  profile: Pick<Profile, 'id' | 'nickname' | 'avatar_url'> | null
+}
+
+export interface RatingHistory {
+  id:            string
+  match_id:      string
+  user_id:       string
+  rating_before: number
+  rating_after:  number
+  delta:         number
+  created_at:    string
+}
+
+// ── 站内信 (Notifications) — Phase 2 ─────────────────────────────────────────
+
+export type NotificationType =
+  | 'follow_session' | 'waitlist_promoted' | 'match_confirm' | 'match_published'
+
+export interface Notification {
+  id:         string
+  user_id:    string
+  type:       NotificationType
+  title:      string
+  body:       string
+  link:       string | null
+  read:       boolean
+  created_at: string
 }
 
 /** A single game's scores, as entered in the score table (before persistence). */

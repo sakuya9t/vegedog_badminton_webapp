@@ -264,7 +264,7 @@ export default function MatchDetailClient({ initialMatch, currentUserId }: {
           </div>
           <p className="text-xs text-gray-400">
             {match.is_public ? '所有登录用户都能在对战历史看到。' : '仅参与方可在对战历史看到。'}
-            无论是否公开，本场对局都会计入菜狗杯 ELO 积分。
+            无论是否公开，本场对局都会计入对战 ELO 积分。
           </p>
           {match.status === 'pending' && (
             <p className="text-xs text-amber-600">注意：更改公开性会重置所有人的确认。</p>
