@@ -47,6 +47,17 @@ async function publishSinglesMatch(browser: Browser, t1: number, t2: number): Pr
   return matchId
 }
 
+// Read a player's current 排位分数 (games played + rounded ELO) off their profile.
+async function readProfileRating(page: Page, profileHref: string): Promise<{ games: number; rating: number }> {
+  await page.goto(profileHref)
+  const card = page.locator('div.card').filter({ hasText: '排位分数' })
+  await expect(card.getByText(/对战 ELO/)).toBeVisible({ timeout: 8_000 })
+  const text = await card.innerText()
+  const games = parseInt(text.match(/(\d+)\s*局/)![1], 10)
+  const rating = parseInt(await card.locator('p.text-xl').first().innerText(), 10)
+  return { games, rating }
+}
+
 test.describe('Versus Phase 2 — ratings & 排行榜', () => {
   test('publishing populates the leaderboard and the player rating card', async ({ browser }) => {
     test.setTimeout(60_000)
@@ -67,6 +78,45 @@ test.describe('Versus Phase 2 — ratings & 排行榜', () => {
     await page.waitForURL(/\/players\//, { timeout: 8_000 })
     await expect(page.getByText(/对战 ELO · \d+ 局/)).toBeVisible({ timeout: 8_000 })
     await expect(page.getByText('暂无积分')).toHaveCount(0)
+
+    await ctx.close()
+  })
+
+  test('publishing a match updates both players ratings', async ({ browser }) => {
+    // Two publish flows + profile reads; generous budget for cold dev compiles.
+    test.setTimeout(180_000)
+
+    // Seed one published match so both players are on the board with a rating.
+    await publishSinglesMatch(browser, 21, 11)
+
+    const ctx  = await browser.newContext({ storageState: authAs(1) })
+    const page = await ctx.newPage()
+    await page.goto('/versus')
+    await page.getByRole('button', { name: '排行榜' }).click()
+    await expect(page.getByText('对战排行榜')).toBeVisible({ timeout: 8_000 })
+
+    // Resolve both players' profile URLs from their leaderboard rows.
+    const u1Href = await page.getByRole('link', { name: new RegExp(U1) }).first().getAttribute('href')
+    const u2Href = await page.getByRole('link', { name: new RegExp(U2) }).first().getAttribute('href')
+    expect(u1Href).toBeTruthy()
+    expect(u2Href).toBeTruthy()
+
+    const before1 = await readProfileRating(page, u1Href!)
+    const before2 = await readProfileRating(page, u2Href!)
+
+    // Publish another match (opponent wins this time) → both ratings must move.
+    await publishSinglesMatch(browser, 15, 21)
+
+    // Each player's games count climbs and ELO shifts once the publish lands.
+    // Re-read with retry since the rating write propagates asynchronously.
+    await expect(async () => {
+      const after1 = await readProfileRating(page, u1Href!)
+      const after2 = await readProfileRating(page, u2Href!)
+      expect(after1.games).toBeGreaterThan(before1.games)
+      expect(after2.games).toBeGreaterThan(before2.games)
+      expect(after1.rating).not.toBe(before1.rating)
+      expect(after2.rating).not.toBe(before2.rating)
+    }).toPass({ timeout: 20_000 })
 
     await ctx.close()
   })
