@@ -114,16 +114,21 @@ begin
     end loop;
   end loop;
 
+  -- Round on persist: the ELO math (power/division) yields unbounded-scale
+  -- numerics that would otherwise compound ~90 digits per game. 2 dp is plenty.
   insert into public.player_ratings (user_id, rating, games_played, peak_rating, updated_at)
-  select user_id, rating, games, greatest(rating0, rating), now() from tmp_rate
+  select user_id, round(rating, 2), games, greatest(round(rating0, 2), round(rating, 2)), now() from tmp_rate
   on conflict (user_id) do update
     set rating       = excluded.rating,
         games_played = excluded.games_played,
         peak_rating  = greatest(public.player_ratings.peak_rating, excluded.rating),
         updated_at   = now();
 
-  insert into public.rating_history (match_id, user_id, rating_before, rating_after, delta)
-  select p_match_id, user_id, rating0, rating, rating - rating0 from tmp_rate;
+  -- created_at = published_at so a chronological backfill yields correct trend order.
+  insert into public.rating_history (match_id, user_id, rating_before, rating_after, delta, created_at)
+  select p_match_id, user_id, round(rating0, 2), round(rating, 2), round(rating, 2) - round(rating0, 2),
+         coalesce(v_match.published_at, now())
+  from tmp_rate;
 end;
 $$;
 
