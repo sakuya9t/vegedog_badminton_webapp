@@ -5,14 +5,6 @@ function shortId() {
   return Math.random().toString(36).slice(2, 8)
 }
 
-// Returns a datetime-local string (YYYY-MM-DDTHH:MM) offset by `hoursFromNow`
-function futureDateTime(hoursFromNow: number): string {
-  const d = new Date(Date.now() + hoursFromNow * 3_600_000)
-  // Round to nearest 15 min
-  d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0)
-  return d.toISOString().slice(0, 16)
-}
-
 // ── Create a session and return its URL ────────────────────────────────────
 async function createTestSession(page: import('@playwright/test').Page) {
   const id = shortId()
@@ -20,11 +12,9 @@ async function createTestSession(page: import('@playwright/test').Page) {
 
   await page.fill('input[placeholder="周五菜狗"]', `E2E 测试场次 ${id}`)
 
-  // CBA (Synergy Mission) is pre-selected by default — no action needed
-
-  await page.fill('input[type="datetime-local"]', futureDateTime(4))
-  const deadlineInputs = page.locator('input[type="datetime-local"]')
-  await deadlineInputs.nth(1).fill(futureDateTime(2))
+  // CBA (Synergy Mission) is pre-selected by default — no action needed.
+  // Start time / withdraw deadline use the form's valid defaults
+  // (next Friday 8pm + deadline 2 days prior), set via the DateTimePicker.
 
   await page.fill('input[type="number"][min="1"][max="20"]', '2')   // courts
   await page.fill('input[type="number"][min="1"][max="200"]', '4')  // max participants
@@ -38,7 +28,7 @@ async function createTestSession(page: import('@playwright/test').Page) {
 
 test.describe('Session lifecycle', () => {
   test('create a session', async ({ page }) => {
-    const sessionUrl = await createTestSession(page)
+    await createTestSession(page)
     await expect(page.locator('h1, h2').filter({ hasText: 'E2E 测试场次' }).first()).toBeVisible()
     await expect(page.getByText('正在接龙')).toBeVisible()
   })
@@ -82,6 +72,7 @@ test.describe('Session lifecycle', () => {
 
     // Click the 退出 button on own participant row
     await page.locator('button', { hasText: '退出' }).first().click()
+    await page.locator('button', { hasText: '确定' }).click()   // confirm 退出 dialog
     await expect(page.getByText('已退出')).toBeVisible({ timeout: 5_000 })
     await expect(page.locator('text=已报名（0/')).toBeVisible()
   })
@@ -90,10 +81,7 @@ test.describe('Session lifecycle', () => {
     await page.goto('/sessions/new')
 
     await page.fill('input[placeholder="周五菜狗"]', `E2E 候补测试 ${shortId()}`)
-    // CBA (Synergy Mission) is pre-selected by default — no action needed
-
-    await page.fill('input[type="datetime-local"]', futureDateTime(4))
-    await page.locator('input[type="datetime-local"]').nth(1).fill(futureDateTime(2))
+    // CBA pre-selected; date/time use the form's valid defaults.
     await page.fill('input[type="number"][min="1"][max="20"]', '1')   // 1 court
     await page.fill('input[type="number"][min="1"][max="200"]', '1')  // max 1 person
 
@@ -124,14 +112,16 @@ test.describe('Session lifecycle', () => {
 
     // Lock
     await page.locator('button', { hasText: '🔒 锁定接龙' }).click()
+    await page.locator('button', { hasText: '确定' }).click()   // confirm 锁定 dialog
     await expect(page.getByText('已锁定')).toBeVisible({ timeout: 5_000 })
 
     // Mark 加时 on own row
     const lateBtn = page.locator('button', { hasText: '+时' }).first()
     await expect(lateBtn).toBeVisible()
     await lateBtn.click()
-    // Button should now be highlighted (active state)
-    await expect(lateBtn).toHaveClass(/brand|green|active|bg-/, { timeout: 3_000 })
+    await page.locator('button', { hasText: '确定' }).click()   // confirm 加时 dialog
+    // Button should now be highlighted (active/orange state)
+    await expect(lateBtn).toHaveClass(/orange/, { timeout: 3_000 })
   })
 
   test('lock session and toggle payment status', async ({ page }) => {
@@ -142,6 +132,7 @@ test.describe('Session lifecycle', () => {
     await expect(page.getByText('已加入！🎉')).toBeVisible({ timeout: 5_000 })
 
     await page.locator('button', { hasText: '🔒 锁定接龙' }).click()
+    await page.locator('button', { hasText: '确定' }).click()   // confirm 锁定 dialog
     await expect(page.getByText('已锁定')).toBeVisible({ timeout: 5_000 })
 
     // Payment record should appear as ❗标记已支付
@@ -165,6 +156,7 @@ test.describe('Session lifecycle', () => {
     await expect(page.getByText('已加入！🎉')).toBeVisible({ timeout: 5_000 })
 
     await page.locator('button', { hasText: '🔒 锁定接龙' }).click()
+    await page.locator('button', { hasText: '确定' }).click()   // confirm 锁定 dialog
     await expect(page.getByText('已锁定')).toBeVisible({ timeout: 5_000 })
 
     await page.locator('button', { hasText: '移动到历史' }).click()
@@ -206,6 +198,7 @@ test.describe('Multi-user queue & waitlist promotion', () => {
     const page = await ctx.newPage()
     await page.goto(sessionUrl)
     await page.locator('button', { hasText: '退出' }).first().click()
+    await page.locator('button', { hasText: '确定' }).click()   // confirm 退出 dialog
     await expect(page.getByText('已退出')).toBeVisible({ timeout: 8_000 })
     await ctx.close()
   }
@@ -228,8 +221,7 @@ test.describe('Multi-user queue & waitlist promotion', () => {
 
     const sessionName = `E2E 多人测试 ${shortId()}`
     await page1.fill('input[placeholder="周五菜狗"]', sessionName)
-    await page1.fill('input[type="datetime-local"]', futureDateTime(4))
-    await page1.locator('input[type="datetime-local"]').nth(1).fill(futureDateTime(2))
+    // Date/time use the form's valid defaults.
     await page1.fill('input[type="number"][min="1"][max="20"]', '2')   // courts
     await page1.fill('input[type="number"][min="1"][max="200"]', '8')  // max 8
     await page1.click('button[type="submit"]')
@@ -281,6 +273,7 @@ test.describe('Multi-user queue & waitlist promotion', () => {
     const adminPage = await adminCtx.newPage()
     await adminPage.goto(sessionUrl)
     await adminPage.locator('button', { hasText: '🔒 锁定接龙' }).click()
+    await adminPage.locator('button', { hasText: '确定' }).click()   // confirm 锁定 dialog
     await expect(adminPage.getByText('已锁定')).toBeVisible({ timeout: 5_000 })
 
     // ── Admin marks first 4 participants as +时 ───────────────────────────
@@ -289,6 +282,7 @@ test.describe('Multi-user queue & waitlist promotion', () => {
     await expect(lateButtons).toHaveCount(8, { timeout: 5_000 })
     for (let i = 0; i < 4; i++) {
       await lateButtons.nth(i).click()
+      await adminPage.locator('button', { hasText: '确定' }).click()   // confirm 加时 dialog
       await expect(lateButtons.nth(i)).toHaveClass(/orange/, { timeout: 3_000 })
     }
     await adminCtx.close()
@@ -309,11 +303,15 @@ test.describe('Multi-user queue & waitlist promotion', () => {
     const lateRows = checkPage.locator('xpath=//h2[contains(., "+时名单")]/following-sibling::div')
     await expect(lateRows).toHaveCount(4, { timeout: 5_000 })
 
-    // ── Validate 6 users show 已付 ✓ ─────────────────────────────────────
-    // User 4's own row: interactive button. Others: read-only badges.
-    // Count may exceed 6 if the viewer's entry appears in multiple UI sections.
-    const paidCount = await checkPage.locator('button:has-text("已付 ✓"), .badge:has-text("已付 ✓")').count()
-    expect(paidCount).toBeGreaterThanOrEqual(6)
+    // ── Validate 6 of the 8 joined are marked paid ───────────────────────
+    // Per-row paid status of *other* users is admin-only; the aggregate
+    // counter is visible to everyone, so assert that instead. The 6 payments
+    // are committed in parallel, so reload-and-recheck until they all land
+    // (a single snapshot can race a not-yet-propagated write).
+    await expect(async () => {
+      await checkPage.reload()
+      await expect(checkPage.getByText('已付款（6/8）')).toBeVisible({ timeout: 2_000 })
+    }).toPass({ timeout: 20_000 })
 
     await checkCtx.close()
   })
