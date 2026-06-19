@@ -79,6 +79,12 @@ export default function Leaderboard({ currentUserId }: { currentUserId: string |
 
   const groups = groupCount > 0 ? snakeGroups(rows, groupCount) : null
 
+  // When the board is long, cap its height and scroll it internally. The current
+  // user's row then pins (position: sticky, top+bottom) to the near edge so their
+  // rank stays in view: stuck to the bottom while they're below the fold, flowing
+  // normally as you scroll onto them, then stuck to the top once you scroll past.
+  const pinCurrentUser = rows.length > 8
+
   return (
     <div className="space-y-3">
       {/* Leaderboard */}
@@ -87,7 +93,7 @@ export default function Leaderboard({ currentUserId }: { currentUserId: string |
           <h2 className="font-semibold text-sm text-gray-500 uppercase tracking-wide">对战排行榜</h2>
           <span className="text-[11px] text-gray-400">仅计已发布对局</span>
         </div>
-        <div className="space-y-1">
+        <div className={`space-y-1 ${pinCurrentUser ? 'max-h-[22rem] overflow-y-auto -mx-1 px-1' : ''}`}>
           {rows.map((r, i) => {
             const me = r.user_id === currentUserId
             const d = r.recentDelta
@@ -96,7 +102,8 @@ export default function Leaderboard({ currentUserId }: { currentUserId: string |
                 key={r.user_id}
                 href={`/players/${r.user_id}`}
                 className={`flex items-center gap-3 rounded-xl px-2 py-2 transition-colors
-                  ${me ? 'bg-brand-50' : 'hover:bg-gray-50'}`}>
+                  ${me ? 'bg-brand-50' : 'hover:bg-gray-50'}
+                  ${me && pinCurrentUser ? 'sticky top-0 bottom-0 z-10 shadow-md ring-1 ring-brand-200' : ''}`}>
                 <span className="w-6 text-center text-sm font-semibold tabular-nums shrink-0">
                   {i < 3 ? MEDAL[i] : <span className="text-gray-400">{i + 1}</span>}
                 </span>
